@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>BlockSignal</title>
+  <meta name="description" content="BlockSignal: find SF blocks where 311 reports cluster far from open help. Outreach Compass agent powered by Mistral AI and Elastic.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Silkscreen:wght@400;700&family=VT323&display=swap">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 8' shape-rendering='crispEdges'%3E%3Crect width='8' height='8' fill='%23071a24'/%3E%3Crect x='1' y='1' width='3' height='3' fill='%23FFD800'/%3E%3Crect x='4' y='1' width='3' height='3' fill='%23FF8205'/%3E%3Crect x='1' y='4' width='3' height='3' fill='%23FA500F'/%3E%3Crect x='4' y='4' width='3' height='3' fill='%2338f3ff'/%3E%3C/svg%3E">
+</head>
+<body>
+  <!-- BOOT SCREEN -->
+  <div id="boot" role="dialog" aria-label="Loading">
+    <div class="boot-inner">
+      <div class="boot-logo" id="bootLogo" aria-hidden="true"></div>
+      <p class="boot-coin blink">INSERT COIN</p>
+      <p class="boot-line" id="bootLine">LOADING CITY...</p>
+      <div class="boot-bar" aria-hidden="true"><div id="bootFill"></div></div>
+      <p class="boot-skip">PRESS ANY KEY</p>
+    </div>
+  </div>
+
+  <div id="app">
+    <header class="topbar">
+      <div class="brand">
+        <h1 class="sr-only">BlockSignal</h1>
+        <div id="wordmark" aria-hidden="true"></div>
+        <span class="tag">OUTREACH COMPASS // SF</span>
+      </div>
+      <div class="topbar-right">
+        <span id="modeChip" class="chip chip-live">LIVE</span>
+        <button id="soundBtn" class="pxbtn small" type="button" aria-pressed="false">SFX: OFF</button>
+      </div>
+    </header>
+
+    <main class="grid">
+      <!-- LEFT HUD -->
+      <aside class="panel hud" aria-label="Mission log">
+        <h2 class="ph">MISSION LOG</h2>
+
+        <section class="stats">
+          <div class="stat"><span class="k">311 REPORTS</span><span class="v" id="sReports">---</span></div>
+          <div class="stat"><span class="k">PIT STOPS</span><span class="v" id="sPitstops">---</span></div>
+          <div class="stat"><span class="k">GRID CELLS</span><span class="v" id="sCells">---</span></div>
+        </section>
+        <div class="chips">
+          <span class="chip chip-mistral" id="chipMistral">MISTRAL ...</span>
+          <span class="chip chip-elastic" id="chipElastic">ELASTIC ...</span>
+        </div>
+
+        <section class="ctl">
+          <h3 class="lbl">SELECT PLAYER</h3>
+          <div class="players" role="radiogroup" aria-label="Persona">
+            <button type="button" role="radio" class="player" data-persona="mayor" id="pMayor"><span class="pn">P1</span>MAYOR'S OFFICE</button>
+            <button type="button" role="radio" class="player" data-persona="charity" id="pCharity"><span class="pn">P2</span>OUTREACH CHARITY</button>
+          </div>
+        </section>
+
+        <section class="ctl">
+          <h3 class="lbl">TIME WARP <span class="dim" id="atLabel">AT: NOW</span></h3>
+          <div class="seg" id="timeSeg" role="radiogroup" aria-label="Pit Stop hours at">
+            <button type="button" role="radio" data-at="now" class="on">NOW</button>
+            <button type="button" role="radio" data-at="18">6PM</button>
+            <button type="button" role="radio" data-at="21">9PM</button>
+            <button type="button" role="radio" data-at="2">2AM</button>
+          </div>
+        </section>
+
+        <section class="ctl">
+          <label class="lbl" for="district">DISTRICT</label>
+          <select id="district" class="pxsel">
+            <option value="">ALL SF</option>
+          </select>
+        </section>
+
+        <section class="board">
+          <h3 class="lbl">WORST GAPS <span class="dim">GAP / 7D</span></h3>
+          <ol id="leader" class="leader"></ol>
+        </section>
+
+        <div class="legend" aria-label="Gap score scale">
+          <span>GAP 0</span><i class="ramp"></i><span>100</span>
+        </div>
+      </aside>
+
+      <!-- MAP -->
+      <section class="mapwrap" aria-label="Map">
+        <div id="map"></div>
+        <div class="pixgrid" aria-hidden="true"></div>
+        <div class="map-hint" id="mapHint">CLICK A BLOCK TO INSPECT</div>
+        <div id="inspect" class="inspect" hidden></div>
+      </section>
+
+      <!-- RIGHT: AGENT -->
+      <aside class="panel compass" aria-label="Outreach Compass">
+        <h2 class="ph">OUTREACH COMPASS <span class="dim">AGENT</span></h2>
+        <div class="quests">
+          <button type="button" class="pxbtn quest" data-persona="charity" data-q="Hygiene van tonight 6-9pm in the Tenderloin. Where should we stop?"><span class="qk">QUEST P2</span>Hygiene van tonight 6-9pm in the Tenderloin. Where should we stop?</button>
+          <button type="button" class="pxbtn quest" data-persona="mayor" data-q="Which 5 blocks in D6 have the worst service gap this week and what should we do?"><span class="qk">QUEST P1</span>Which 5 blocks in D6 have the worst service gap this week and what should we do?</button>
+          <button type="button" class="pxbtn brief" id="briefBtn">DISTRICT BRIEFING</button>
+        </div>
+        <div id="log" class="log" aria-live="polite">
+          <div class="sys">COMPASS ONLINE. ASK ABOUT ANY BLOCK, VAN ROUTE OR DISTRICT.</div>
+        </div>
+        <form id="chatForm" class="chatform" autocomplete="off">
+          <span class="prompt">&gt;</span>
+          <input id="chatInput" type="text" placeholder="Ask Compass..." aria-label="Ask Outreach Compass">
+          <button class="pxbtn go" type="submit" id="sendBtn">SEND</button>
+        </form>
+      </aside>
+    </main>
+
+    <footer class="ticker" aria-label="Guardrails">
+      <div class="track">
+        <span>BLOCK-LEVEL ONLY · NO INDIVIDUALS · NO PHOTOS · SERVICES, NOT ENFORCEMENT · 311 UNDER-REPORTS SOME AREAS ·&nbsp;</span>
+        <span aria-hidden="true">BLOCK-LEVEL ONLY · NO INDIVIDUALS · NO PHOTOS · SERVICES, NOT ENFORCEMENT · 311 UNDER-REPORTS SOME AREAS ·&nbsp;</span>
+      </div>
+    </footer>
+  </div>
+
+  <div id="modal" class="modal" hidden>
+    <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <div class="modal-head"><h2 id="modalTitle">DISTRICT BRIEFING</h2><button class="pxbtn small" id="modalClose" type="button">X CLOSE</button></div>
+      <div class="modal-body md" id="modalBody"></div>
+    </div>
+  </div>
+
+  <div class="crt" aria-hidden="true"></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+  <script src="mock.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
