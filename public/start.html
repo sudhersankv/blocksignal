@@ -1,0 +1,464 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Start here: BlockSignal</title>
+<meta name="description" content="BlockSignal in 60 seconds: BlockSignal shows where people in San Francisco are missing help, block by block.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=Press+Start+2P&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#FFFAEB; --surface:#FFFFFF; --surface-2:#FFF0C2; --ink:#1E1E1E; --ink-2:#4A4033; --line:#1E1E1E;
+  --orange:#FA500F; --orange-ink:#B83A00;
+  --r1:#FFD800; --r2:#FFAF00; --r3:#FF8205; --r4:#FA500F; --r5:#E10500;
+  --open:#0F7A3D; --closed:#B42318; --focus:#1D4ED8; --teal:#0B6E79;
+  --shadow:3px 3px 0 var(--ink);
+  --pixel:"Press Start 2P", ui-monospace, monospace;
+  --sans:"Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+*,*::before,*::after{box-sizing:border-box}
+html{scroll-behavior:auto}
+@media (prefers-reduced-motion:no-preference){html{scroll-behavior:smooth}}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:18px;line-height:1.6;overflow-wrap:break-word}
+a{color:var(--orange-ink);text-decoration:underline;text-underline-offset:3px;text-decoration-thickness:2px}
+a:hover{color:var(--ink)}
+:focus-visible{outline:3px solid var(--focus);outline-offset:3px}
+.wrap{max-width:960px;margin:0 auto;padding:0 16px}
+.skip{position:absolute;left:16px;top:-100px;background:var(--surface);color:var(--ink);border:3px solid var(--line);padding:10px 14px;font-weight:700;z-index:10;box-shadow:var(--shadow)}
+.skip:focus{top:12px}
+
+/* header */
+.site-header{border-bottom:3px solid var(--line);background:var(--surface)}
+.site-header .wrap{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 16px;padding-top:12px;padding-bottom:12px}
+.brand{font-family:var(--pixel);font-size:16px;color:var(--ink);text-decoration:none;line-height:1.4}
+.brand:hover{color:var(--orange-ink)}
+.site-header ul{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:4px 18px}
+.site-header nav a{font-weight:600;color:var(--ink)}
+.site-header nav a[aria-current="page"]{text-decoration-color:var(--orange);text-decoration-thickness:4px}
+
+/* sections */
+.story{padding:56px 0 8px}
+h1,h2{font-family:var(--pixel);letter-spacing:0;font-weight:400}
+h2{font-size:clamp(17px,3.4vw,24px);line-height:1.45;margin:0 0 20px;scroll-margin-top:16px}
+h2 .kicker{display:block;font-family:var(--sans);font-size:15px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--orange-ink);margin-bottom:10px}
+h3{font-size:21px;line-height:1.35;margin:0 0 8px}
+p{margin:0 0 14px}
+.lead{font-size:clamp(19px,2.4vw,22px);max-width:44ch}
+.muted{color:var(--ink-2)}
+.pixels{display:flex;gap:6px;margin:48px 0 0}
+.pixels span{width:14px;height:14px;border:2px solid var(--line)}
+.pixels span:nth-child(1){background:var(--r1)}.pixels span:nth-child(2){background:var(--r2)}.pixels span:nth-child(3){background:var(--r3)}.pixels span:nth-child(4){background:var(--r4)}.pixels span:nth-child(5){background:var(--r5)}
+.card{background:var(--surface);border:2px solid var(--line);box-shadow:var(--shadow);padding:18px 20px}
+
+/* hero */
+.hero{padding:64px 0 16px}
+.hero h1{font-size:clamp(28px,8vw,56px);line-height:1.2;margin:0 0 24px}
+.hero .lead{font-size:clamp(21px,3vw,28px);line-height:1.4;max-width:30ch;margin-bottom:8px}
+.hero .lead strong{background:var(--surface-2);box-shadow:0 0 0 4px var(--surface-2)}
+.btns{display:flex;flex-wrap:wrap;gap:14px;margin-top:28px}
+.btn{display:inline-block;font-weight:700;font-size:18px;text-decoration:none;color:var(--ink);background:var(--surface);border:2px solid var(--line);box-shadow:var(--shadow);padding:12px 20px}
+.btn.primary{background:var(--orange)}
+.btn:hover{color:var(--ink);background:var(--surface-2)}
+.btn.primary:hover{background:var(--r3)}
+.btn:active{transform:translate(2px,2px);box-shadow:1px 1px 0 var(--ink)}
+.hero-grid{display:grid;grid-template-columns:repeat(8,1fr);gap:4px;max-width:260px;margin-top:36px}
+.hero-grid i{aspect-ratio:1;border:2px solid var(--line);background:var(--surface)}
+
+/* stats */
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,250px),1fr));gap:18px;margin:24px 0 18px}
+.stat{background:var(--surface);border:2px solid var(--line);box-shadow:var(--shadow);padding:16px 18px;display:flex;flex-direction:column;margin:0}
+.stat .num{font-size:clamp(44px,8vw,60px);font-weight:800;line-height:1.05;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.stat .unit{font-weight:700;font-size:17px;margin:6px 0 4px}
+.stat .src{margin-top:auto;padding-top:10px;font-size:14px;color:var(--ink-2);display:flex;align-items:center;gap:8px}
+.stat .src::before{content:"";width:10px;height:10px;background:var(--open);border:2px solid var(--line);flex:0 0 auto}
+.stat.r5{border-top:10px solid var(--r5)}.stat.r4{border-top:10px solid var(--r4)}.stat.r3{border-top:10px solid var(--r3)}
+.callout{background:var(--surface-2);border:2px solid var(--line);padding:12px 16px;font-weight:600}
+.fallback{font-size:16px}
+
+.problem{margin:0 0 8px;padding-left:1.4em;font-size:clamp(19px,2.3vw,21px);max-width:52ch}
+.problem li{margin-bottom:8px;padding-left:4px}
+.problem li::marker{font-weight:800;color:var(--orange-ink)}
+.terms{margin-top:22px;background:var(--surface-2);border:2px solid var(--line);padding:16px 20px}
+.terms h3{font-size:18px;margin-bottom:10px}
+.terms dl{margin:0;display:grid;gap:8px}
+.terms dl > div{display:grid;grid-template-columns:minmax(0,10em) minmax(0,1fr);gap:4px 14px}
+.terms dt{font-weight:700}
+.terms dd{margin:0;font-size:17px}
+@media (max-width:560px){.terms dl > div{grid-template-columns:minmax(0,1fr)}}
+
+/* problem statement */
+.statement{margin:0;background:var(--surface);border:2px solid var(--line);box-shadow:var(--shadow);border-left:12px solid var(--orange);padding:24px 24px 20px}
+.statement p{font-size:clamp(20px,2.6vw,24px);line-height:1.5;font-weight:600;margin:0}
+.statement p::before{content:"\201C";font-family:var(--pixel);color:var(--orange-ink);margin-right:6px}
+.statement p::after{content:"\201D";font-family:var(--pixel);color:var(--orange-ink);margin-left:4px}
+
+/* steps */
+.steps{list-style:none;padding:0;margin:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:18px}
+.steps li{background:var(--surface);border:2px solid var(--line);box-shadow:var(--shadow);padding:18px 20px}
+.step-top{display:flex;align-items:center;gap:14px;margin-bottom:12px}
+.step-n{font-family:var(--pixel);font-size:16px;width:44px;height:44px;display:grid;place-items:center;background:var(--orange);border:2px solid var(--line);flex:0 0 auto}
+.icon{display:grid;grid-template-columns:repeat(4,10px);gap:2px}
+.icon i{width:10px;height:10px;background:transparent}
+.icon i.k{background:var(--ink)}.icon i.a{background:var(--r2)}.icon i.b{background:var(--r4)}.icon i.g{background:var(--open)}
+.chip{display:inline-block;font-size:14px;font-weight:700;background:var(--surface-2);border:2px solid var(--line);padding:1px 8px;margin:2px 4px 2px 0}
+
+/* who */
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,270px),1fr));gap:18px}
+.who{display:flex;flex-direction:column}
+.who .tag{align-self:flex-start;font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;background:var(--surface-2);border:2px solid var(--line);padding:2px 8px;margin-bottom:10px}
+.who .gain{margin-top:auto;border-top:2px dashed var(--line);padding-top:10px;margin-bottom:0}
+.who .gain strong{color:var(--open)}
+.who.next{background:var(--bg);border-style:dashed;box-shadow:none;color:var(--ink-2)}
+.who.next h3{color:var(--ink-2)}
+
+/* before/after */
+.ba{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:0;border:2px solid var(--line);box-shadow:var(--shadow)}
+.ba > div{padding:18px 20px}
+.ba .before{background:var(--surface)}
+.ba .after{background:var(--surface-2);border-left:2px solid var(--line)}
+@media (max-width:660px){.ba .after{border-left:0;border-top:2px solid var(--line)}}
+.ba h3{font-family:var(--pixel);font-size:15px;line-height:1.5;margin-bottom:12px}
+.ba ul{margin:0;padding:0;list-style:none}
+.ba li{display:flex;gap:10px;margin-bottom:8px}
+.ba li::before{content:"";flex:0 0 auto;width:12px;height:12px;margin-top:.5em;border:2px solid var(--line)}
+.ba .before li::before{background:var(--surface)}
+.ba .after li::before{background:var(--open)}
+
+/* stack */
+.stack{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr));gap:18px}
+.stack .card{border-top:10px solid var(--orange)}
+.stack .card.elastic{border-top-color:var(--teal)}
+.stack ul{margin:0 0 12px;padding-left:1.2em}
+.stack li{margin-bottom:8px}
+.tech{font-size:15px;color:var(--ink-2);border-top:2px dashed var(--line);padding-top:10px;margin:0}
+.stack .t{font-family:ui-monospace,Consolas,monospace;font-size:15px;color:var(--ink-2)}
+.tech code{font-family:ui-monospace,Consolas,monospace;font-size:14px;background:var(--surface-2);padding:0 4px}
+
+/* guardrails */
+.guard{list-style:none;padding:0;margin:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,200px),1fr));gap:12px}
+.guard li{background:var(--surface);border:2px solid var(--line);padding:12px 14px;font-weight:600;display:flex;gap:10px;align-items:flex-start}
+.guard li::before{content:"";flex:0 0 auto;width:14px;height:14px;margin-top:.35em;background:var(--ink)}
+
+/* cta */
+.cta{background:var(--ink);color:#fff;border:2px solid var(--line);box-shadow:3px 3px 0 var(--orange);padding:28px 24px}
+.cta h2{color:#fff}
+.cta .q{font-size:clamp(20px,3vw,26px);font-weight:700;line-height:1.4;margin:0 0 18px}
+.cta .btn{border-color:#fff;box-shadow:3px 3px 0 #fff}
+.cta a:not(.btn){color:#FFD8B8}
+
+.site-footer{margin-top:56px;border-top:3px solid var(--line);background:var(--surface);padding:20px 0;font-size:16px}
+.site-footer p{margin:0 0 6px}
+
+@media (prefers-reduced-motion:no-preference){
+  .btn{transition:background-color .15s ease}
+  .hero-grid i{animation:blink 3.2s steps(1) infinite}
+  @keyframes blink{50%{filter:brightness(.88)}}
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to main content</a>
+
+<header class="site-header">
+  <div class="wrap">
+    <a class="brand" href="/start.html">BlockSignal</a>
+    <nav aria-label="Site">
+      <ul>
+        <li><a href="/start.html" aria-current="page">Start here</a></li>
+        <li><a href="/">Live map</a></li>
+        <li><a href="/help.html#how-it-works">How it works</a></li>
+      </ul>
+    </nav>
+  </div>
+</header>
+
+<main id="main" tabindex="-1">
+<div class="wrap">
+
+  <!-- 1. Hero -->
+  <section class="hero" aria-labelledby="title">
+    <h1 id="title">BlockSignal</h1>
+    <p class="lead"><strong>BlockSignal shows where people in San Francisco are missing help, block by block.</strong></p>
+    <div class="btns">
+      <a class="btn primary" href="/">Open the live map <span aria-hidden="true">→</span></a>
+      <a class="btn" href="/help.html#how-it-works">How it works</a>
+    </div>
+    <div class="hero-grid" aria-hidden="true">
+      <i></i><i></i><i style="background:var(--r1)"></i><i></i><i></i><i style="background:var(--r2)"></i><i></i><i></i>
+      <i></i><i style="background:var(--r2)"></i><i style="background:var(--r4)"></i><i style="background:var(--r3)"></i><i></i><i></i><i></i><i style="background:var(--open)"></i>
+      <i></i><i style="background:var(--r3)"></i><i style="background:var(--r5)"></i><i style="background:var(--r4)"></i><i style="background:var(--r1)"></i><i></i><i></i><i></i>
+      <i style="background:var(--open)"></i><i></i><i style="background:var(--r2)"></i><i></i><i></i><i></i><i style="background:var(--r1)"></i><i></i>
+    </div>
+  </section>
+
+  <div class="pixels" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
+
+  <!-- 2. Problem -->
+  <section class="story" id="problem" aria-labelledby="problem-h">
+    <h2 id="problem-h"><span class="kicker">The problem</span>Reports count complaints, not need</h2>
+    <ol class="problem">
+      <li>San Francisco's 311 line gets thousands of encampment reports a month.</li>
+      <li>Those reports show where people <strong>complain</strong>. They don't show where people <strong>lack help</strong>.</li>
+      <li>Help, like Pit Stop restrooms, is often far away or <strong>closed</strong>, especially at night.</li>
+      <li>So outreach vans and city resources follow the loudest complaints, not the biggest gaps.</li>
+    </ol>
+
+    <div class="stats" id="stats" aria-busy="true">
+      <figure class="stat r5">
+        <span class="num" id="s-reports">—</span>
+        <figcaption>
+          <span class="unit" style="display:block">311 encampment reports in the last 30 days</span>
+        </figcaption>
+        <span class="src">Live from DataSF</span>
+      </figure>
+      <figure class="stat r4">
+        <span class="num" id="s-notfound">—</span>
+        <figcaption>
+          <span class="unit" style="display:block">of closed 311 encampment reports in the last 30 days: crews couldn't locate anyone</span>
+        </figcaption>
+        <span class="src">Live from DataSF</span>
+      </figure>
+      <figure class="stat r3">
+        <span class="num" id="s-far">—</span>
+        <figcaption>
+          <span class="unit" style="display:block" id="s-far-unit">blocks with reports in the last 30 days are more than 1&nbsp;km from open help at 9&nbsp;PM tonight</span>
+        </figcaption>
+        <span class="src">Live from DataSF</span>
+      </figure>
+    </div>
+    <p class="callout" id="s-pitstops">At 9&nbsp;PM tonight, only <span id="s-open">—</span> of <span id="s-total">—</span> Pit Stops are open.</p>
+    <p class="fallback muted" id="s-fallback" hidden>Live numbers could not load right now. In a typical 30 days, 311 gets about 3,000 to 4,000 encampment reports, and most Pit Stops are closed at 9&nbsp;PM.</p>
+  </section>
+
+  <div class="pixels" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
+
+  <!-- 3. Problem statement -->
+  <section class="story" id="statement" aria-labelledby="statement-h">
+    <h2 id="statement-h"><span class="kicker">Problem statement</span>The gap nobody can see</h2>
+    <blockquote class="statement">
+      <p>Outreach teams and the Mayor's Office can't easily see which blocks have many reports <strong>and</strong> no open help nearby, right now.</p>
+    </blockquote>
+  </section>
+
+  <div class="pixels" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
+
+  <!-- 4. How we fix it -->
+  <section class="story" id="fix" aria-labelledby="fix-h">
+    <h2 id="fix-h"><span class="kicker">How we fix it</span>Three steps</h2>
+    <ol class="steps">
+      <li>
+        <div class="step-top">
+          <span class="step-n" aria-hidden="true">1</span>
+          <span class="icon" aria-hidden="true"><i class="a"></i><i></i><i class="g"></i><i></i><i class="a"></i><i class="a"></i><i></i><i class="g"></i><i></i><i class="a"></i><i class="a"></i><i></i><i class="a"></i><i></i><i></i><i class="g"></i></span>
+        </div>
+        <h3><span class="visually-hidden" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">Step 1: </span>Combine</h3>
+        <p>Live 311 encampment reports + Pit Stop locations and opening hours.</p>
+      </li>
+      <li>
+        <div class="step-top">
+          <span class="step-n" aria-hidden="true">2</span>
+          <span class="icon" aria-hidden="true"><i></i><i></i><i></i><i class="b"></i><i></i><i></i><i class="a"></i><i class="b"></i><i></i><i class="a"></i><i class="a"></i><i class="b"></i><i class="a"></i><i class="a"></i><i class="a"></i><i class="b"></i></span>
+        </div>
+        <h3><span style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">Step 2: </span>Score</h3>
+        <p>Every block gets a <strong>Gap score</strong>.</p>
+      </li>
+      <li>
+        <div class="step-top">
+          <span class="step-n" aria-hidden="true">3</span>
+          <span class="icon" aria-hidden="true"><i class="k"></i><i class="k"></i><i class="k"></i><i class="k"></i><i class="k"></i><i class="b"></i><i class="b"></i><i class="k"></i><i class="k"></i><i class="k"></i><i class="k"></i><i class="k"></i><i class="k"></i><i></i><i></i><i></i></span>
+        </div>
+        <h3><span style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">Step 3: </span>Act</h3>
+        <p>Ask <strong>Outreach Compass</strong>, our AI analyst, a plain question. It answers with ranked blocks, van routes and memos, and it shows its numbers.</p>
+      </li>
+    </ol>
+
+    <aside class="terms" aria-labelledby="terms-h">
+      <h3 id="terms-h">Key terms</h3>
+      <dl>
+        <div><dt>Block</dt><dd>A map square about 330&nbsp;m wide (2&ndash;3 city blocks).</dd></div>
+        <div><dt>Gap score</dt><dd>0&ndash;100: how underserved a block is right now. Higher = more reports, more recent, and farther from open help. 100 = the most underserved block in the city today.</dd></div>
+        <div><dt>Open help</dt><dd>A Pit Stop that is open at the time you picked.</dd></div>
+        <div><dt>Service gap</dt><dd>Many reports + no open help nearby.</dd></div>
+        <div><dt>Outreach Compass</dt><dd>Our AI analyst.</dd></div>
+      </dl>
+    </aside>
+  </section>
+
+  <div class="pixels" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
+
+  <!-- 5. Who it helps -->
+  <section class="story" id="who" aria-labelledby="who-h">
+    <h2 id="who-h"><span class="kicker">Who it helps</span>What each team gains</h2>
+    <div class="cards">
+      <article class="card who">
+        <span class="tag">City</span>
+        <h3>Mayor's Office and HSOC</h3>
+        <p>Know which blocks to prioritize this week, and where a mobile Pit Stop would reach the most people.</p>
+        <p class="gain"><strong>Gain:</strong> the same budget closes more gaps.</p>
+      </article>
+      <article class="card who">
+        <span class="tag">Nonprofits</span>
+        <h3>Outreach charities</h3>
+        <p>Plan tonight's van route in seconds, knowing which Pit Stops are closed.</p>
+        <p class="gain"><strong>Gain:</strong> reach more people per shift.</p>
+      </article>
+      <article class="card who">
+        <span class="tag">Public</span>
+        <h3>Residents and advocates</h3>
+        <p>See service gaps with evidence, not anecdotes.</p>
+      </article>
+      <article class="card who next">
+        <span class="tag">Coming next</span>
+        <h3>Shop Opener</h3>
+        <p>Finds what a block is missing for small businesses.</p>
+      </article>
+    </div>
+  </section>
+
+  <div class="pixels" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
+
+  <!-- 6. Before / after -->
+  <section class="story" id="before-after" aria-labelledby="ba-h">
+    <h2 id="ba-h"><span class="kicker">The difference</span>Before and after</h2>
+    <div class="ba">
+      <div class="before">
+        <h3>Before</h3>
+        <ul>
+          <li>Route by complaint volume.</li>
+          <li>Guess what's open.</li>
+          <li>Read crew notes by hand.</li>
+        </ul>
+      </div>
+      <div class="after">
+        <h3>After</h3>
+        <ul>
+          <li>Route by Gap score.</li>
+          <li>Know what's open at 9&nbsp;PM.</li>
+          <li>Crew notes sorted automatically.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <div class="pixels" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
+
+  <!-- 7. Built with -->
+  <section class="story" id="built" aria-labelledby="built-h">
+    <h2 id="built-h"><span class="kicker">Why it's credible</span>Built with Mistral and Elastic</h2>
+    <p>Real city data, real search, and an AI analyst that shows its numbers.</p>
+    <div class="stack">
+      <article class="card">
+        <h3>Mistral</h3>
+        <ul>
+          <li>Reads messy Pit Stop hours and crew notes into clean data <span class="t">(structured outputs)</span></li>
+          <li>Runs the Outreach Compass analyst <span class="t">(function calling)</span></li>
+          <li>Searches notes by meaning <span class="t">(mistral-embed)</span></li>
+        </ul>
+      </article>
+      <article class="card elastic">
+        <h3>Elastic</h3>
+        <ul>
+          <li>Stores every report on the map <span class="t">(geo_point)</span></li>
+          <li>Finds where reports cluster <span class="t">(geotile aggregations)</span></li>
+          <li>Measures distance to open help <span class="t">(geo_distance)</span></li>
+          <li>Searches notes by meaning <span class="t">(semantic_text)</span></li>
+          <li>Tracks weekly trends <span class="t">(ES|QL)</span></li>
+          <li>Runs the same analyst in Kibana <span class="t">(Agent Builder, shareable over MCP)</span></li>
+        </ul>
+      </article>
+    </div>
+    <p style="margin-top:18px"><a href="/help.html#how-it-works">See the interactive diagram of how it works</a></p>
+  </section>
+
+  <div class="pixels" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
+
+  <!-- 8. Guardrails -->
+  <section class="story" id="guardrails" aria-labelledby="guard-h">
+    <h2 id="guard-h"><span class="kicker">Guardrails</span>Built to help, not to police</h2>
+    <ul class="guard">
+      <li>Block-level only</li>
+      <li>No individuals</li>
+      <li>No photos</li>
+      <li>For services, not enforcement</li>
+      <li>311 under-reports some areas, so treat gaps as signals</li>
+    </ul>
+  </section>
+
+  <div class="pixels" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
+
+  <!-- 9. CTA -->
+  <section class="story" id="try" aria-labelledby="try-h">
+    <div class="cta">
+      <h2 id="try-h">Try it</h2>
+      <p class="q">Ask: “Where should our hygiene van stop tonight in the Tenderloin?”</p>
+      <a class="btn primary" id="try-link" href="/?persona=charity">Ask Outreach Compass <span aria-hidden="true">→</span></a>
+      <p style="margin:18px 0 0;font-size:16px">New here? <a href="/help.html#how-it-works">Read how it works</a>.</p>
+    </div>
+  </section>
+
+</div>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <p><a href="/">Open the live map</a> · <a href="/help.html">Full guide</a></p>
+    <p class="muted">BlockSignal, built for the Mistral × Elastic hackathon. Data: DataSF 311 Cases and Pit Stop locations. Block-level data only.</p>
+  </div>
+</footer>
+
+<script>
+(function(){
+  var Q = 'Where should our hygiene van stop tonight in the Tenderloin?';
+  document.getElementById('try-link').href = '/?q=' + encodeURIComponent(Q) + '&persona=charity';
+
+  // Today at 21:00 in America/Los_Angeles, as a UTC ISO string.
+  function tonight9pmISO(){
+    var TZ = 'America/Los_Angeles';
+    var f = new Intl.DateTimeFormat('en-US', {timeZone:TZ, year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', hourCycle:'h23'});
+    function parts(d){ var o={}; f.formatToParts(d).forEach(function(p){ o[p.type]=p.value; }); return o; }
+    var t = parts(new Date());
+    var guess = Date.UTC(+t.year, +t.month - 1, +t.day, 21, 0);
+    var g = parts(new Date(guess));
+    var asLA = Date.UTC(+g.year, +g.month - 1, +g.day, +g.hour, +g.minute);
+    return new Date(guess - (asLA - guess)).toISOString();
+  }
+  var at = encodeURIComponent(tonight9pmISO());
+  var nf = new Intl.NumberFormat('en-US');
+  function set(id, v){ document.getElementById(id).textContent = v; }
+  function get(u){ return fetch(u, {headers:{Accept:'application/json'}}).then(function(r){ if(!r.ok) throw new Error(r.status); return r.json(); }); }
+  var failed = false;
+  function fail(){ if(!failed){ failed = true; document.getElementById('s-fallback').hidden = false; } }
+
+  var jobs = [
+    get('/api/status').then(function(s){
+      if (!s || !s.counts || typeof s.counts.reports !== 'number') throw new Error('shape');
+      set('s-reports', nf.format(s.counts.reports));
+    }).catch(fail),
+    get('/api/pitstops?at=' + at).then(function(d){
+      var ps = d.pitstops || [];
+      if (!ps.length) throw new Error('empty');
+      set('s-open', nf.format(ps.filter(function(p){ return p.openNow; }).length));
+      set('s-total', nf.format(ps.length));
+    }).catch(fail),
+    get('/api/cells?at=' + at).then(function(d){
+      var cells = (d.cells || []).filter(function(c){ return c.count30 > 0; });
+      if (!cells.length) throw new Error('empty');
+      var far = cells.filter(function(c){ return c.nearestOpenM == null || c.nearestOpenM > 1000; }).length;
+      set('s-far', nf.format(far));
+      set('s-far-unit', 'of ' + nf.format(cells.length) + ' blocks with reports in the last 30 days are more than 1 km from open help at 9 PM tonight');
+      var nfCount = 0, closed = 0;
+      cells.forEach(function(c){
+        var o = c.outcomes || {};
+        Object.keys(o).forEach(function(k){ if (k !== 'open') closed += o[k] || 0; });
+        nfCount += o.not_found || 0;
+      });
+      if (closed > 0) set('s-notfound', Math.round(100 * nfCount / closed) + '%');
+    }).catch(fail)
+  ];
+  Promise.all(jobs).then(function(){ document.getElementById('stats').setAttribute('aria-busy','false'); });
+})();
+</script>
+</body>
+</html>

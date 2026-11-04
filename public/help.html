@@ -289,7 +289,7 @@ table.metrics{border-collapse:collapse;width:100%;font-size:16px;line-height:1.5
       <fieldset class="seg">
         <legend>Example question</legend>
         <label><input type="radio" name="q" value="charity" checked> Charity: "We run a hygiene van tonight, 6 to 9pm, in the Tenderloin. Where should we stop?"</label>
-        <label><input type="radio" name="q" value="mayor"> Mayor's Office: "Which 5 blocks in D6 have the worst service gap this week?"</label>
+        <label><input type="radio" name="q" value="mayor"> Mayor's Office: "Which 5 blocks in D6 · SoMa &amp; Mission Bay have the worst service gap this week?"</label>
       </fieldset>
       <div class="trace-btns">
         <button type="button" class="tbtn" id="t-play">Play</button>
@@ -329,7 +329,7 @@ table.metrics{border-collapse:collapse;width:100%;font-size:16px;line-height:1.5
         <span class="tag">City</span>
         <h3>Mayor's Office / HSOC</h3>
         <p>Rank the blocks with the worst gaps in a district, and find the best spot for a new mobile Pit Stop.</p>
-        <blockquote>"Which 5 blocks in D6 have the worst service gap this week, and what should we do?"</blockquote>
+        <blockquote>"Which 5 blocks in D6 · SoMa &amp; Mission Bay have the worst service gap this week, and what should we do?"</blockquote>
       </article>
       <article class="card">
         <span class="tag">Charity</span>
@@ -559,11 +559,11 @@ gapScore = round(raw ÷ max raw × 100)</code></pre>
       [['server','ui'],['e6','e9'],'The answer streams back as NDJSON. The map highlights the blocks and numbers the route stops.']
     ],
     mayor:[
-      ['ui',[],'You ask: "Which 5 blocks in D6 have the worst service gap this week?" The web UI sends it to POST /api/chat with persona = mayor.'],
+      ['ui',[],'You ask: "Which 5 blocks in D6 · SoMa & Mission Bay have the worst service gap this week?" The web UI sends it to POST /api/chat with persona = mayor.'],
       ['server',['e9'],'The BlockSignal server receives the request and hands it to Outreach Compass.'],
       ['compass',['e6'],'Outreach Compass sends the conversation and its 5 tool definitions to Mistral.'],
       ['llm',['e7'],'Mistral picks a tool: hotspots({district: "6", limit: 5}).'],
-      ['es',['e8'],'Elasticsearch runs it: geotile_grid hotspots in District 6, geo_distance to the nearest open Pit Stop, and an ES|QL week-over-week trend.'],
+      ['es',['e8'],'Elasticsearch runs it: geotile_grid hotspots in District 6 (SoMa & Mission Bay), geo_distance to the nearest open Pit Stop, and an ES|QL week-over-week trend.'],
       ['compass',['e8'],'Real numbers come back. Compass streams a tool_result event, and may also call suggest_pitstop_site for the best new Pit Stop location.'],
       ['llm',['e7'],'Mistral writes the answer: the 5 blocks ranked with their numbers, and where a mobile Pit Stop would cover the most reports.'],
       [['server','ui'],['e6','e9'],'The answer streams back as NDJSON. The map highlights the 5 blocks and the suggested site.']
