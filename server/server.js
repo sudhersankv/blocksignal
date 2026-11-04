@@ -174,7 +174,15 @@ async function runBlockgap(q) {
         PYTHONIOENCODING: 'utf-8',
       },
     }, (err, stdout, stderr) => {
-      if (err) return reject(new Error((stderr || err.message).toString().trim().split('\n').slice(-3).join(' ')));
+      if (err) {
+        const raw = (stderr || err.message).toString();
+        console.warn('[blockgap] failed:', raw.trim().split('\n').slice(-1)[0]);
+        if (/index_not_found_exception|no such index/.test(raw)) {
+          return reject(Object.assign(new Error('Shop Opener data is not connected yet (storefront and business indices missing in Elastic). The other views still work.'), { code: 'NO_MODULE' }));
+        }
+        if (err.killed) return reject(new Error('Shop Opener took too long. Please try again.'));
+        return reject(new Error('Shop Opener hit an error. Please try again in a moment.'));
+      }
       try { resolve(JSON.parse(stdout)); } catch { reject(new Error('blockgap returned invalid JSON')); }
     });
   });
