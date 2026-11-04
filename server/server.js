@@ -144,7 +144,33 @@ async function handleApi(req, res, url) {
       return sendJson(res, 200, await briefing({ district: body.district || '6' }));
     } catch (e) { return sendJson(res, 500, { error: e.message }); }
   }
+  if (req.method === 'GET' && p === '/api/blockgap') {
+    const q = (url.searchParams.get('q') || '').trim().slice(0, 500);
+    if (!q) return sendJson(res, 400, { error: 'missing q' });
+    try { return sendJson(res, 200, await runBlockgap(q)); }
+    catch (e) { return sendJson(res, e.code === 'NO_MODULE' ? 503 : 500, { error: e.message }); }
+  }
   return sendJson(res, 404, { error: 'not found' });
+}
+
+// ---------- P3 Shop Opener: bridge to Guru's Python blockgap.py ----------
+const PY_DIR = path.join(ROOT, 'server', 'py');
+const PYTHON = process.env.PYTHON || (process.platform === 'win32' ? 'python' : 'python3');
+async function runBlockgap(q) {
+  const mod = path.join(PY_DIR, 'blockgap.py');
+  if (!(await fs.stat(mod).catch(() => null))) {
+    throw Object.assign(new Error('Shop Opener engine not installed yet (server/py/blockgap.py missing)'), { code: 'NO_MODULE' });
+  }
+  const { execFile } = await import('node:child_process');
+  return new Promise((resolve, reject) => {
+    // q is passed as an argv element (no shell), so it can't inject commands.
+    execFile(PYTHON, [path.join(PY_DIR, 'blockgap_cli.py'), q], {
+      cwd: PY_DIR, timeout: 90000, maxBuffer: 20 * 1024 * 1024, env: process.env,
+    }, (err, stdout, stderr) => {
+      if (err) return reject(new Error((stderr || err.message).toString().trim().split('\n').slice(-3).join(' ')));
+      try { resolve(JSON.parse(stdout)); } catch { reject(new Error('blockgap returned invalid JSON')); }
+    });
+  });
 }
 
 const server = http.createServer(async (req, res) => {

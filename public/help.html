@@ -1,0 +1,641 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How BlockSignal works</title>
+<meta name="description" content="How BlockSignal finds San Francisco blocks where people lack help, and how to use the map and the Outreach Compass agent.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Press+Start+2P&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#FFFAEB; --surface:#FFFFFF; --surface-2:#FFF0C2; --ink:#1E1E1E; --ink-2:#4A4033; --line:#1E1E1E;
+  --orange:#FA500F; --orange-ink:#B83A00;
+  --r1:#FFD800; --r2:#FFAF00; --r3:#FF8205; --r4:#FA500F; --r5:#E10500;
+  --open:#0F7A3D; --closed:#B42318; --focus:#1D4ED8; --shadow:4px 4px 0 var(--ink);
+  --pixel:"Press Start 2P", ui-monospace, monospace;
+  --sans:"Inter", "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+*,*::before,*::after{box-sizing:border-box}
+html{scroll-behavior:auto}
+@media (prefers-reduced-motion:no-preference){html{scroll-behavior:smooth}}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:18px;line-height:1.6;overflow-wrap:break-word}
+img,svg{max-width:100%;height:auto}
+a{color:var(--orange-ink);text-decoration:underline;text-underline-offset:3px;text-decoration-thickness:2px}
+a:hover{color:var(--ink)}
+:focus-visible{outline:3px solid var(--focus);outline-offset:3px}
+.wrap{max-width:860px;margin:0 auto;padding:0 16px}
+
+.skip{position:absolute;left:16px;top:-100px;background:var(--surface);color:var(--ink);border:3px solid var(--line);padding:10px 14px;font-weight:700;z-index:10;box-shadow:var(--shadow)}
+.skip:focus{top:12px}
+
+/* header / nav */
+.site-header{border-bottom:3px solid var(--line);background:var(--surface)}
+.site-header .wrap{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 16px;padding-top:12px;padding-bottom:12px}
+.brand{font-family:var(--pixel);font-size:16px;color:var(--ink);text-decoration:none;line-height:1.4}
+.brand:hover{color:var(--orange-ink)}
+.site-header nav ul{list-style:none;margin:0;padding:0;display:flex;gap:16px;flex-wrap:wrap}
+.site-header nav a{font-weight:600;color:var(--ink)}
+
+/* hero */
+.hero{padding:48px 0 32px}
+.hero h1{font-family:var(--pixel);font-size:clamp(24px,7vw,48px);line-height:1.25;margin:0 0 20px;letter-spacing:0}
+.lede{font-size:clamp(19px,2.6vw,22px);margin:0 0 8px;max-width:40ch}
+.lede strong{background:var(--surface-2);padding:0 4px}
+.btn{display:inline-block;margin-top:20px;background:var(--orange);color:var(--ink);font-weight:700;font-size:18px;text-decoration:none;border:3px solid var(--line);box-shadow:var(--shadow);padding:12px 20px}
+.btn:hover{color:var(--ink);background:var(--r3)}
+.btn:active{transform:translate(2px,2px);box-shadow:2px 2px 0 var(--ink)}
+
+/* divider */
+.pixels{display:flex;gap:6px;margin:40px 0 0}
+.pixels span{width:14px;height:14px;border:2px solid var(--line)}
+.pixels span:nth-child(1){background:var(--r1)}.pixels span:nth-child(2){background:var(--r2)}.pixels span:nth-child(3){background:var(--r3)}.pixels span:nth-child(4){background:var(--r4)}.pixels span:nth-child(5){background:var(--r5)}
+
+/* toc */
+.toc{background:var(--surface);border:3px solid var(--line);box-shadow:var(--shadow);padding:16px 20px;margin:8px 0 0}
+.toc h2{font-size:16px;margin:0 0 8px}
+.toc ol{margin:0;padding-left:1.4em;columns:2 220px;column-gap:24px}
+.toc li{break-inside:avoid}
+
+/* sections */
+section{padding-top:8px}
+h2{font-family:var(--pixel);font-size:clamp(16px,3.2vw,22px);line-height:1.45;margin:24px 0 16px;scroll-margin-top:16px}
+h3{font-size:20px;line-height:1.35;margin:0 0 8px}
+p{margin:0 0 14px}
+ul,ol{margin:0 0 14px;padding-left:1.3em}
+li{margin-bottom:6px}
+.muted{color:var(--ink-2)}
+
+.card{background:var(--surface);border:3px solid var(--line);box-shadow:var(--shadow);padding:18px 20px}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:20px}
+.tag{display:inline-block;font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;background:var(--surface-2);border:2px solid var(--line);padding:2px 8px;margin-bottom:10px}
+blockquote{margin:12px 0 0;padding:10px 14px;background:var(--surface-2);border-left:6px solid var(--orange);font-style:italic}
+
+.insight li strong{color:var(--ink)}
+
+/* steps */
+.steps{list-style:none;padding:0;counter-reset:s;display:grid;gap:14px}
+.steps li{counter-increment:s;display:grid;grid-template-columns:44px 1fr;gap:14px;align-items:start;background:var(--surface);border:2px solid var(--line);padding:14px 16px;margin:0}
+.steps li::before{content:counter(s);font-family:var(--pixel);font-size:16px;line-height:1;display:grid;place-items:center;width:44px;height:44px;background:var(--orange);border:2px solid var(--line);color:var(--ink)}
+
+/* legend */
+.ramp{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin:8px 0 6px}
+.ramp div{height:36px;border:2px solid var(--line)}
+.ramp-labels{display:flex;justify-content:space-between;font-size:15px;font-weight:600;color:var(--ink-2)}
+.legend{list-style:none;padding:0;margin:0}
+.legend li{display:flex;gap:12px;align-items:center;margin-bottom:10px}
+.mk{flex:0 0 auto;width:22px;height:22px;border:3px solid var(--line)}
+.mk.open{background:var(--open)}
+.mk.closed{background:var(--surface);border-color:var(--closed);border-style:dashed}
+.mk.stop{width:28px;height:28px;display:grid;place-items:center;background:var(--ink);color:#fff;font-family:var(--pixel);font-size:12px;border-color:var(--ink)}
+.formula{font-family:ui-monospace,Consolas,monospace;font-size:16px;background:var(--surface-2);border:2px solid var(--line);padding:10px 12px;overflow-x:auto}
+
+/* tools */
+.tools{list-style:none;padding:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:12px}
+.tools li{background:var(--surface);border:2px solid var(--line);padding:12px 14px;margin:0}
+.tools code{font-size:14px;color:var(--ink-2)}
+
+.guard li{padding-left:4px}
+
+/* faq */
+details{background:var(--surface);border:2px solid var(--line);margin-bottom:10px}
+summary{cursor:pointer;font-weight:700;padding:12px 16px}
+details[open] summary{border-bottom:2px solid var(--line)}
+details > div{padding:12px 16px 2px}
+
+.site-footer{margin-top:56px;border-top:3px solid var(--line);background:var(--surface);padding:20px 0;font-size:16px}
+.site-footer p{margin:0 0 6px}
+/* how it works: architecture */
+:root{--teal:#0B6E79}
+.arch-legend{display:flex;flex-wrap:wrap;gap:8px 20px;font-size:16px;margin:0 0 14px}
+.arch-legend span{display:inline-flex;align-items:center;gap:8px}
+.sw{display:inline-block;width:20px;height:20px;border:2px solid var(--ink);flex:0 0 auto}
+.sw-mistral{background:var(--orange)}
+.sw-elastic{background:var(--surface-2);border:3px solid var(--teal)}
+.sw-app{background:var(--surface)}
+fieldset.seg{border:2px solid var(--line);background:var(--surface);padding:8px 14px 10px;margin:0 0 14px;min-width:0}
+fieldset.seg legend{font-weight:700;padding:0 6px;font-size:16px}
+fieldset.seg label{display:inline-flex;gap:8px;align-items:baseline;margin:4px 18px 4px 0;font-size:16px;cursor:pointer}
+fieldset.seg input{accent-color:var(--orange-ink);width:18px;height:18px;flex:0 0 auto;transform:translateY(3px)}
+.trace fieldset.seg label{display:flex}
+.arch{position:relative;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));grid-template-areas:"s311 spit ." "enrich es kibana" "server compass llm" "ui ui .";gap:44px 40px;margin:8px 0 24px;padding:8px}
+.arch-edges{position:absolute;inset:0;width:100%;height:100%;z-index:0;pointer-events:none;overflow:visible}
+.arch-edges line{stroke:var(--ink-2);stroke-width:2;stroke-dasharray:6 5}
+.arch-edges line.on{stroke:var(--ink);stroke-width:5;stroke-dasharray:none}
+.node{position:relative;z-index:1;font:700 16px/1.3 var(--sans);text-align:left;color:var(--ink);background:var(--surface);border:3px solid var(--line);box-shadow:var(--shadow);padding:10px 12px;min-height:76px;cursor:pointer}
+.node .own{display:block;font-size:12px;letter-spacing:.08em;text-transform:uppercase;margin-bottom:4px}
+.node.mistral{background:var(--orange)}
+.node.elastic{background:var(--surface-2);border-color:var(--teal)}
+.node.elastic .own{color:var(--teal)}
+.node .branch{display:none}
+.node[data-node="s311"]{grid-area:s311}.node[data-node="spit"]{grid-area:spit}.node[data-node="enrich"]{grid-area:enrich}.node[data-node="es"]{grid-area:es}.node[data-node="kibana"]{grid-area:kibana}.node[data-node="server"]{grid-area:server}.node[data-node="compass"]{grid-area:compass}.node[data-node="llm"]{grid-area:llm}.node[data-node="ui"]{grid-area:ui}
+.arch.dim .node:not(.hl){border-style:dashed;box-shadow:none}
+.node.hl{box-shadow:0 0 0 4px var(--r1),0 0 0 7px var(--ink),var(--shadow)}
+.node[aria-pressed="true"] .own::before{content:"\25B6\00a0"}
+.node:focus-visible{outline:3px solid var(--focus);outline-offset:9px}
+@media (prefers-reduced-motion:no-preference){
+  .node{transition:box-shadow .25s ease,transform .25s ease}
+  .node.hl{transform:translate(-2px,-2px)}
+  .arch-edges line{transition:stroke-width .25s ease}
+}
+.detail{margin-bottom:20px}
+.detail h3{margin-bottom:4px}
+.detail dl{margin:8px 0 0;display:grid;grid-template-columns:max-content minmax(0,1fr);gap:4px 14px}
+.detail dt{font-weight:700}
+.detail dd{margin:0}
+.detail code,.metrics code{font-size:15px}
+.trace-btns{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:4px 0 12px}
+.tbtn{font:700 16px var(--sans);color:var(--ink);background:var(--surface);border:3px solid var(--line);box-shadow:var(--shadow);padding:8px 16px;cursor:pointer;min-width:72px}
+.tbtn:hover{background:var(--surface-2)}
+.tbtn:disabled{color:var(--ink-2);border-style:dashed;box-shadow:none;cursor:not-allowed}
+#t-play{background:var(--orange)}
+.counter{font-weight:700;margin-left:4px}
+.caption{background:var(--surface-2);border:2px solid var(--line);padding:10px 14px;margin:0;min-height:3.4em}
+@media (max-width:700px){
+  .arch{grid-template-columns:minmax(0,1fr);grid-template-areas:none;gap:34px;padding:0 4px}
+  .arch .node{grid-area:auto}
+  .arch-edges{display:none}
+  .node .branch{display:inline}
+  .node[data-node="spit"]::after,.node[data-node="enrich"]::after,.node[data-node="es"]::after,.node[data-node="server"]::after,.node[data-node="compass"]::after,.node[data-node="llm"]::after{content:"\2193";position:absolute;left:50%;bottom:-32px;transform:translateX(-50%);font-size:22px;line-height:1;color:var(--ink)}
+  .detail dl{grid-template-columns:minmax(0,1fr)}
+}
+
+/* at a glance */
+.glance{margin:0;border:3px solid var(--line);background:var(--surface);box-shadow:var(--shadow)}
+.glance > div{display:grid;grid-template-columns:minmax(0,13em) minmax(0,1fr);gap:4px 16px;padding:10px 16px;border-bottom:2px solid var(--line)}
+.glance > div:last-child{border-bottom:0}
+.glance > div:nth-child(odd){background:var(--bg)}
+.glance dt{font-weight:700}
+.glance dd{margin:0}
+@media (max-width:560px){.glance > div{grid-template-columns:minmax(0,1fr)}}
+
+/* metrics */
+pre.formula{white-space:pre-wrap;margin:0 0 14px}
+.table-wrap{overflow-x:auto;border:3px solid var(--line);box-shadow:var(--shadow);background:var(--surface);margin-top:18px}
+table.metrics{border-collapse:collapse;width:100%;font-size:16px;line-height:1.5}
+.metrics caption{text-align:left;font-weight:700;padding:10px 12px;border-bottom:2px solid var(--line);background:var(--surface-2)}
+.metrics th,.metrics td{border-bottom:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}
+.metrics thead th{background:var(--ink);color:#fff}
+.metrics tbody th{font-weight:700;min-width:9em}
+@media (max-width:700px){
+  .table-wrap{overflow:visible}
+  table.metrics,.metrics caption,.metrics tbody,.metrics tr,.metrics th,.metrics td{display:block;width:100%}
+  .metrics thead{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+  .metrics tr{border-bottom:3px solid var(--line)}
+  .metrics tbody th{background:var(--surface-2);border-bottom:0}
+  .metrics td{border-bottom:0;padding-top:2px}
+  .metrics td::before{display:block;font-weight:700;font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-2)}
+  .metrics td:nth-of-type(1)::before{content:"What it means"}
+  .metrics td:nth-of-type(2)::before{content:"Unit / range"}
+  .metrics td:nth-of-type(3)::before{content:"How it's calculated"}
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to main content</a>
+
+<header class="site-header">
+  <div class="wrap">
+    <a class="brand" href="/">BlockSignal</a>
+    <nav aria-label="Site">
+      <ul>
+        <li><a href="/">Map</a></li>
+        <li><a href="/help.html" aria-current="page">How it works</a></li>
+      </ul>
+    </nav>
+  </div>
+</header>
+
+<main id="main" tabindex="-1">
+<div class="wrap">
+
+  <section class="hero" aria-labelledby="title">
+    <h1 id="title">BlockSignal</h1>
+    <p class="lede">311 encampment reports show where people complain.</p>
+    <p class="lede"><strong>BlockSignal shows where people lack help.</strong></p>
+    <a class="btn" href="/">Open the map <span aria-hidden="true">→</span></a>
+  </section>
+
+  <nav class="toc" aria-labelledby="toc-title">
+    <h2 id="toc-title">On this page</h2>
+    <ol>
+      <li><a href="#problem">The problem</a></li>
+      <li><a href="#how-it-works">How it works</a></li>
+      <li><a href="#glance">At a glance</a></li>
+      <li><a href="#who">Who it's for</a></li>
+      <li><a href="#use">How to use it</a></li>
+      <li><a href="#map">Reading the map</a></li>
+      <li><a href="#metrics">Metrics and units</a></li>
+      <li><a href="#compass">Meet Outreach Compass</a></li>
+      <li><a href="#hood">Under the hood</a></li>
+      <li><a href="#guardrails">Guardrails</a></li>
+      <li><a href="#data">Data</a></li>
+      <li><a href="#faq">FAQ</a></li>
+    </ol>
+  </nav>
+
+  <div class="pixels" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
+
+  <section id="problem" aria-labelledby="problem-h">
+    <h2 id="problem-h">The problem</h2>
+    <ul class="insight">
+      <li><strong>Complaints are not need.</strong> A 311 encampment report tells you someone complained, not that the people there lack help.</li>
+      <li><strong>Need is distance from help.</strong> A block with many reports and no <em>open</em> Pit Stop nearby is a real service gap.</li>
+      <li><strong>Nobody joins the two today.</strong> BlockSignal puts live 311 reports next to Pit Stop opening hours, so you can see the gaps at any hour.</li>
+    </ul>
+  </section>
+
+  <div class="pixels" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
+
+  <section id="how-it-works" aria-labelledby="how-h">
+    <h2 id="how-h">How it works</h2>
+    <p>Public city data flows through Mistral and Elasticsearch to the map. Select any box to see what it does, or trace a real question through the system.</p>
+
+    <div class="arch-legend" aria-label="Legend">
+      <span><i class="sw sw-mistral" aria-hidden="true"></i> Mistral: orange box, "Mistral" label</span>
+      <span><i class="sw sw-elastic" aria-hidden="true"></i> Elastic: cream box, teal border, "Elastic" label</span>
+      <span><i class="sw sw-app" aria-hidden="true"></i> BlockSignal app and data sources: white box</span>
+    </div>
+
+    <div class="arch-controls">
+      <fieldset class="seg">
+        <legend>Highlight a route</legend>
+        <label><input type="radio" name="route" value="none" checked> None</label>
+        <label><input type="radio" name="route" value="live"> Live app path</label>
+        <label><input type="radio" name="route" value="kibana"> Kibana path</label>
+      </fieldset>
+    </div>
+
+    <div class="arch" id="arch">
+      <svg class="arch-edges" id="arch-edges" aria-hidden="true" focusable="false"></svg>
+      <button type="button" class="node app"     data-node="s311"><span class="own">Data</span>DataSF 311 Encampments</button>
+      <button type="button" class="node app"     data-node="spit"><span class="own">Data</span>DataSF Pit Stops</button>
+      <button type="button" class="node mistral" data-node="enrich"><span class="own">Mistral</span>Enrich: hours + note outcomes</button>
+      <button type="button" class="node elastic" data-node="es"><span class="own">Elastic</span>Elasticsearch Serverless</button>
+      <button type="button" class="node app"     data-node="server"><span class="own">App</span>BlockSignal server</button>
+      <button type="button" class="node app"     data-node="compass"><span class="own">App</span>Outreach Compass agent</button>
+      <button type="button" class="node mistral" data-node="llm"><span class="own">Mistral</span>Mistral Medium chat</button>
+      <button type="button" class="node app"     data-node="ui"><span class="own">App</span>Web UI: map + Compass panel</button>
+      <button type="button" class="node elastic" data-node="kibana"><span class="own">Elastic</span><span class="branch">Side branch from Elasticsearch: </span>Kibana Agent Builder + MCP</button>
+    </div>
+
+    <div class="detail card" id="arch-detail" aria-live="polite">
+      <p class="muted" style="margin:0">Select a box in the diagram to see what it does.</p>
+    </div>
+
+    <div class="trace card">
+      <h3 id="trace-h">Trace a question</h3>
+      <fieldset class="seg">
+        <legend>Example question</legend>
+        <label><input type="radio" name="q" value="charity" checked> Charity: "We run a hygiene van tonight, 6 to 9pm, in the Tenderloin. Where should we stop?"</label>
+        <label><input type="radio" name="q" value="mayor"> Mayor's Office: "Which 5 blocks in D6 have the worst service gap this week?"</label>
+      </fieldset>
+      <div class="trace-btns">
+        <button type="button" class="tbtn" id="t-play">Play</button>
+        <button type="button" class="tbtn" id="t-prev">Prev</button>
+        <button type="button" class="tbtn" id="t-next">Next</button>
+        <span class="counter" id="t-count">Step 0 of 8</span>
+      </div>
+      <p class="caption" id="t-caption" aria-live="polite">Press Play or Next to follow the question hop by hop.</p>
+    </div>
+  </section>
+
+  <div class="pixels" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
+
+  <section id="glance" aria-labelledby="glance-h">
+    <h2 id="glance-h">At a glance</h2>
+    <dl class="glance">
+      <div><dt>BlockSignal</dt><dd>The app: a map of San Francisco that shows where encampment reports sit far from open help.</dd></div>
+      <div><dt>Gap map</dt><dd>Colored squares, one per block, from yellow (small gap) to red (big gap).</dd></div>
+      <div><dt>Worst Gaps list</dt><dd>The blocks with the highest gap scores, ranked, for the current time and district.</dd></div>
+      <div><dt>Inspect card</dt><dd>Details for the block you clicked: report counts, trend, nearest open Pit Stop and outcome mix.</dd></div>
+      <div><dt>Outreach Compass</dt><dd>The AI agent. Ask it a question and it looks up real numbers, then answers and highlights the map.</dd></div>
+      <div><dt>District Briefing</dt><dd>A one-page memo for a supervisor district, written by Mistral from the same data.</dd></div>
+      <div><dt>Persona switch</dt><dd>Tells the agent who is asking: Mayor's Office / HSOC or an outreach charity.</dd></div>
+      <div><dt>"Show Pit Stops open at"</dt><dd>The time control. Pick a day and hour; only Pit Stops open then count as help.</dd></div>
+      <div><dt>District filter</dt><dd>Limits the map and list to one supervisor district, or shows the whole city.</dd></div>
+      <div><dt>Pit Stops</dt><dd>City-run public toilet and hygiene sites with published locations and hours.</dd></div>
+      <div><dt>311 encampment reports</dt><dd>Requests made to SF 311 under "Encampment", with location, time and crew notes.</dd></div>
+    </dl>
+  </section>
+
+  <div class="pixels" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
+
+  <section id="who" aria-labelledby="who-h">
+    <h2 id="who-h">Who it's for</h2>
+    <div class="grid2">
+      <article class="card">
+        <span class="tag">City</span>
+        <h3>Mayor's Office / HSOC</h3>
+        <p>Rank the blocks with the worst gaps in a district, and find the best spot for a new mobile Pit Stop.</p>
+        <blockquote>"Which 5 blocks in D6 have the worst service gap this week, and what should we do?"</blockquote>
+      </article>
+      <article class="card">
+        <span class="tag">Charity</span>
+        <h3>Outreach charities</h3>
+        <p>Plan tonight's route for a hygiene or meal van, stopping where help is furthest away.</p>
+        <blockquote>"We run a hygiene van tonight, 6 to 9pm, in the Tenderloin. Where should we stop?"</blockquote>
+      </article>
+    </div>
+  </section>
+
+  <div class="pixels" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
+
+  <section id="use" aria-labelledby="use-h">
+    <h2 id="use-h">How to use it</h2>
+    <ol class="steps">
+      <li><div><strong>Pick who's asking.</strong> Choose Mayor's Office or Outreach charity. The agent tailors its answers to you.</div></li>
+      <li><div><strong>Pick a time.</strong> Set the day and hour to see which Pit Stops are open then. Gaps update to match.</div></li>
+      <li><div><strong>Read the gap map and the Worst Gaps list.</strong> Hotter colors mean more reports further from open help.</div></li>
+      <li><div><strong>Click a block to inspect it.</strong> See its report counts, the trend, the nearest open Pit Stop and recent crew outcomes.</div></li>
+      <li><div><strong>Ask Outreach Compass.</strong> Type a question, tap a suggested question, or press District Briefing for a one-page memo.</div></li>
+    </ol>
+  </section>
+
+  <div class="pixels" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
+
+  <section id="map" aria-labelledby="map-h">
+    <h2 id="map-h">Reading the map</h2>
+    <div class="grid2">
+      <div class="card">
+        <h3>Gap score</h3>
+        <div class="ramp" role="img" aria-label="Color ramp from yellow for a low gap to red for a high gap">
+          <div style="background:#FFD800"></div><div style="background:#FFAF00"></div><div style="background:#FF8205"></div><div style="background:#FA500F"></div><div style="background:#E10500"></div>
+        </div>
+        <div class="ramp-labels" aria-hidden="true"><span>Low gap</span><span>High gap</span></div>
+        <p style="margin-top:14px">Each square is a block of about 330&nbsp;m × 350&nbsp;m. In plain words: <strong>many reports + rising + far from open help = high gap</strong>. The number (0 to 100) is always shown next to the color. See <a href="#metrics">Metrics and units</a> for the exact formula.</p>
+      </div>
+      <div class="card">
+        <h3>Markers</h3>
+        <ul class="legend">
+          <li><span class="mk open" aria-hidden="true"></span><span><strong style="color:var(--open)">Open</strong> Pit Stop at the chosen time</span></li>
+          <li><span class="mk closed" aria-hidden="true"></span><span><strong style="color:var(--closed)">Closed</strong> Pit Stop at the chosen time</span></li>
+          <li><span class="mk stop" aria-hidden="true">1</span><span>Numbered route stop suggested by Outreach Compass, in visiting order</span></li>
+        </ul>
+        <p class="muted">A closed Pit Stop does not count as help, so the same block can be a small gap at noon and a big one at midnight.</p>
+      </div>
+    </div>
+  </section>
+
+  <div class="pixels" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
+
+  <section id="metrics" aria-labelledby="metrics-h">
+    <h2 id="metrics-h">Metrics and units</h2>
+    <p>All numbers are per block, never per person. A <strong>block</strong> (cell) is a grid square of 0.003° latitude × 0.004° longitude, about 330&nbsp;m × 350&nbsp;m, or 2 to 3 city blocks.</p>
+
+    <h3>Gap score in plain words</h3>
+    <p><strong>Many reports + rising + far from open help = high gap.</strong> The score runs from 0 to 100 and is relative: 100 is the worst service gap in the current view right now, not an absolute scale.</p>
+    <pre class="formula"><code>raw      = ln(1 + count30) × (1 + recent share) × distance_km
+distance_km = nearest OPEN Pit Stop in km, clamped to 0.05–2
+gapScore = round(raw ÷ max raw × 100)</code></pre>
+    <p><strong>Worked example:</strong> 37 reports in 30 days, 7 of them last week (recent share 7 ÷ 37 ≈ 0.19), nearest open Pit Stop 1.6&nbsp;km away. raw = ln(38) × (1 + 0.19) × 1.6 ≈ 3.64 × 1.19 × 1.6 ≈ <strong>6.9</strong>. If the worst block in view has raw 9.2, this block scores round(6.9 ÷ 9.2 × 100) = 75.</p>
+
+    <div class="table-wrap" role="region" aria-labelledby="metrics-cap" tabindex="0">
+      <table class="metrics">
+        <caption id="metrics-cap">Every metric BlockSignal shows</caption>
+        <thead><tr><th scope="col">Metric</th><th scope="col">What it means</th><th scope="col">Unit / range</th><th scope="col">How it's calculated</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">Block (cell)</th><td>The area every number refers to.</td><td>≈ 330&nbsp;m × 350&nbsp;m</td><td>Grid of 0.003° lat × 0.004° lon.</td></tr>
+          <tr><th scope="row">Reports (30d) <code>count30</code></th><td>311 encampment reports in the block in the last 30 days.</td><td>reports (count)</td><td>Count of reports whose location falls in the block.</td></tr>
+          <tr><th scope="row">Reports (7d) <code>count7</code>, Prior 7d <code>countPrev7</code></th><td>Reports in the last 7 days, and in the 7 days before that.</td><td>reports</td><td>Counts by request date.</td></tr>
+          <tr><th scope="row">Trend</th><td>Is the block getting busier or quieter?</td><td>reports/week change, ▲ rising, ▼ falling</td><td>count7 − countPrev7.</td></tr>
+          <tr><th scope="row">Recent share</th><td>How much of the month's activity happened this week.</td><td>ratio 0–1</td><td>count7 ÷ count30, capped at 1.</td></tr>
+          <tr><th scope="row">Distance to nearest OPEN Pit Stop <code>nearestOpenM</code></th><td>How far the closest help is that is open at the selected time.</td><td>meters (m)</td><td>Straight-line (haversine) distance from the block center. In the score: converted to km and clamped to 0.05–2&nbsp;km, so a block next to an open Pit Stop still counts a little and anything ≥ 2&nbsp;km counts as "far".</td></tr>
+          <tr><th scope="row">Gap score</th><td>How underserved the block is compared with the worst block in view.</td><td>0–100, unitless, relative</td><td>raw = ln(1 + count30) × (1 + recent share) × distance_km; gapScore = round(raw ÷ max raw × 100).</td></tr>
+          <tr><th scope="row">Open now</th><td>Whether a Pit Stop counts as help at the selected time.</td><td>yes / no</td><td>Selected time (America/Los_Angeles) falls inside the hours Mistral parsed from DataSF's free-text hours. Unknown hours count as not open.</td></tr>
+          <tr><th scope="row">Outcome mix</th><td>What crews recorded for the block's reports: resolved, services_offered, declined, not_found, medical, cancelled, open, other.</td><td>% of reports</td><td>Mistral structured outputs classify the top ~120 note texts; rules handle the rest.</td></tr>
+          <tr><th scope="row">Suggested Pit Stop site</th><td>Where a new (mobile) Pit Stop would help most.</td><td>reports covered</td><td>The block covering the most 30-day reports within 800&nbsp;m that are now more than 800&nbsp;m from any open Pit Stop.</td></tr>
+          <tr><th scope="row">Gap ramp colors</th><td>Visual cue for the gap score.</td><td>yellow #FFD800 (low) → red #E10500 (high)</td><td>Always shown together with the number.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <div class="pixels" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
+
+  <section id="compass" aria-labelledby="compass-h">
+    <h2 id="compass-h">Meet Outreach Compass</h2>
+    <p>Outreach Compass is BlockSignal's AI agent. You ask in plain words. It picks tools, looks up the data, shows each step, and highlights the blocks and Pit Stops it used on the map.</p>
+    <ul class="tools">
+      <li><strong>Find hotspots</strong><br>Blocks with the worst gaps, by district or neighborhood. <code>hotspots</code></li>
+      <li><strong>Nearest open help</strong><br>The closest Pit Stops to a spot, and whether they are open. <code>nearest_open_help</code></li>
+      <li><strong>Search crew notes</strong><br>Find notes by meaning, like "declined services" or "medical need". <code>search_notes</code></li>
+      <li><strong>Check the trend</strong><br>Reports this week compared with last week, by neighborhood. <code>trend</code></li>
+      <li><strong>Suggest a Pit Stop site</strong><br>The block where a new Pit Stop would cover the most unserved reports. <code>suggest_pitstop_site</code></li>
+    </ul>
+  </section>
+
+  <div class="pixels" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
+
+  <section id="hood" aria-labelledby="hood-h">
+    <h2 id="hood-h">Under the hood</h2>
+    <div class="grid2">
+      <div class="card">
+        <h3>Mistral</h3>
+        <ul>
+          <li><strong>Structured outputs</strong> turn free-text Pit Stop hours ("Daily 7am to 3pm") into open and close times, and sort crew notes into outcomes.</li>
+          <li><strong>Function calling</strong> runs the Outreach Compass agent loop.</li>
+          <li><strong>mistral-embed</strong> embeddings power meaning-based search of crew notes.</li>
+          <li><strong>District briefings</strong>: a one-page memo per supervisor district.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Elastic</h3>
+        <ul>
+          <li><strong>geo_point</strong> fields on every report and Pit Stop.</li>
+          <li><strong>geotile_grid</strong> aggregations find hotspots.</li>
+          <li><strong>geo_distance</strong> sorting finds the nearest open help.</li>
+          <li><strong>semantic_text</strong> on crew notes for semantic search.</li>
+          <li><strong>ES|QL</strong> computes the 7-day trend.</li>
+          <li><strong>Agent Builder</strong> hosts Outreach Compass in Kibana, exposed to other clients over <strong>MCP</strong>.</li>
+        </ul>
+      </div>
+    </div>
+    <p style="margin-top:20px">See how these pieces connect in the <a href="#how-it-works">interactive architecture diagram</a>.</p>
+  </section>
+
+  <div class="pixels" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
+
+  <section id="guardrails" aria-labelledby="guardrails-h">
+    <h2 id="guardrails-h">Guardrails</h2>
+    <ul class="guard">
+      <li><strong>Block level only.</strong> Data is grouped into blocks of about 330&nbsp;m.</li>
+      <li><strong>No individuals, no photos.</strong> We never show or analyze people or 311 photos.</li>
+      <li><strong>Services, not enforcement.</strong> BlockSignal is for sending help, not for sweeps.</li>
+      <li><strong>Gaps are signals, not ground truth.</strong> 311 under-reports in some neighborhoods, so a quiet block is not always a block without need. Check with people on the ground.</li>
+    </ul>
+  </section>
+
+  <div class="pixels" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
+
+  <section id="data" aria-labelledby="data-h">
+    <h2 id="data-h">Data</h2>
+    <p>All data is public, from DataSF, fetched live and refreshed every hour:</p>
+    <ul>
+      <li><a href="https://data.sfgov.org/d/vw6y-z8j6">SF 311 Cases</a> (encampment reports only, last 30 days)</li>
+      <li><a href="https://data.sfgov.org/d/mr6h-cr3u">Pit Stop locations and hours</a></li>
+    </ul>
+  </section>
+
+  <div class="pixels" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
+
+  <section id="faq" aria-labelledby="faq-h">
+    <h2 id="faq-h">FAQ</h2>
+    <details>
+      <summary>How fresh is the data?</summary>
+      <div><p>It comes live from DataSF and is refreshed every hour. 311 itself lags a little: a report can take some time to appear in the public dataset, and crew notes are added after a visit.</p></div>
+    </details>
+    <details>
+      <summary>Why does a block with fewer reports rank above a busier one?</summary>
+      <div><p>Distance to open help. A busy block next to an open Pit Stop has help nearby. A quieter block 2&nbsp;km from any open Pit Stop can have the bigger gap. Rising reports also add weight.</p></div>
+    </details>
+    <details>
+      <summary>Is the gap score absolute?</summary>
+      <div><p>No. It is relative, 0 to 100, where 100 is the worst block in the current view (time and district). Compare blocks within one view, not across days.</p></div>
+    </details>
+    <details>
+      <summary>What does "open now" use?</summary>
+      <div><p>The time you pick in "Show Pit Stops open at" (San Francisco time). A Pit Stop is open if that time falls inside its hours, which Mistral reads from DataSF's free-text hours like "Close Time: 5pm to Open Time: 9am". Pit Stops with unknown hours count as not open.</p></div>
+    </details>
+    <details>
+      <summary>Why Pit Stops as "help"?</summary>
+      <div><p>They are the only public, geocoded service feed that also publishes opening hours, so we can tell if help is nearby at a given time. On the roadmap: shelters, meal sites and outreach van schedules.</p></div>
+    </details>
+    <details>
+      <summary>Does it track people?</summary>
+      <div><p>No. Everything is counted per block of about 330&nbsp;m × 350&nbsp;m. There are no individuals, no names and no photos.</p></div>
+    </details>
+    <details>
+      <summary>Can I use it in Kibana or through MCP?</summary>
+      <div><p>Yes. The same data lives in Elasticsearch, and Outreach Compass also runs as a Kibana Agent Builder agent whose tools are ES|QL queries, driven by a Mistral connector. Agent Builder's MCP server exposes it to other AI clients. Kibana Maps can show the same layers.</p></div>
+    </details>
+    <details>
+      <summary>How accurate is the AI?</summary>
+      <div><p>The tools return real numbers from Elasticsearch (or the app's own copy of the data). Mistral only picks tools, ranks and explains. Every tool call is shown in the panel, so check the numbers it cites before acting.</p></div>
+    </details>
+  </section>
+
+</div>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <p><a href="/">Back to the map</a></p>
+    <p class="muted">BlockSignal, built for the Mistral × Elastic hackathon. Block-level data only.</p>
+  </div>
+</footer>
+<script>
+(function(){
+  var arch=document.getElementById('arch'); if(!arch) return;
+  var svg=document.getElementById('arch-edges'), detail=document.getElementById('arch-detail');
+  var motionOK=!!(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: no-preference)').matches);
+  var EMPTY='<p class="muted" style="margin:0">Select a box in the diagram to see what it does.</p>';
+  var N={
+    s311:{own:'Data source',what:'Live 311 requests with service_name = "Encampment" from the last 30 days: time, location, status and crew notes. Fetched live and refreshed hourly.',tech:'DataSF open data, dataset vw6y-z8j6',file:'server/lib/data.js'},
+    spit:{own:'Data source',what:'City Pit Stop toilet and hygiene sites with locations and free-text opening hours. Fetched live and refreshed hourly.',tech:'DataSF open data, dataset mr6h-cr3u',file:'server/lib/data.js'},
+    enrich:{own:'Mistral',what:'Structured outputs (json_schema) turn free-text Pit Stop hours into {open, close, days} with mistral-small, and sort crew notes into an outcome (resolved, services_offered, declined, not_found, medical, ...). Results are cached.',tech:'Mistral structured outputs, mistral-small-latest',file:'server/lib/mistral.js, server/lib/data.js'},
+    es:{own:'Elastic',what:'Two indices: sf311-encampments (geo_point, plus a semantic_text field notes_semantic embedded with mistral-embed through an inference endpoint) and sf-pitstops. Runs geotile_grid hotspots, geo_distance nearest Pit Stops and the ES|QL 7-day trend.',tech:'Elasticsearch Serverless: geo_point, geotile_grid, geo_distance, semantic_text, ES|QL. Mistral: mistral-embed',file:'server/lib/elastic.js, scripts/ingest.js'},
+    server:{own:'BlockSignal app',what:'Node server with zero dependencies. Builds the grid cells and gap scores, serves the /api/* endpoints and this website. Falls back to in-memory data if Elasticsearch is not configured.',tech:'Node 22 (no npm packages)',file:'server/server.js, server/lib/data.js'},
+    compass:{own:'BlockSignal app',what:'The agent loop. Gives Mistral 5 tools (hotspots, nearest_open_help, search_notes, trend, suggest_pitstop_site), runs the chosen tool against Elasticsearch, and streams every step as NDJSON events.',tech:'Mistral function calling; Elasticsearch queries',file:'server/lib/agent.js'},
+    llm:{own:'Mistral',what:'mistral-medium-latest decides which tool to call, reads the results, and writes the answer. It also writes the District Briefing.',tech:'Mistral function calling and chat, mistral-medium-latest',file:'server/lib/mistral.js'},
+    ui:{own:'BlockSignal app',what:'The map with the gap grid, Pit Stop markers and numbered route stops, plus the Outreach Compass panel that shows each tool call and the answer.',tech:'Vanilla JS + Leaflet, no build step',file:'public/'},
+    kibana:{own:'Elastic (side branch)',what:'The same Outreach Compass agent inside Kibana Agent Builder. Its tools are ES|QL queries over the same indices, it is driven by a Mistral connector, and it is exposed to other AI clients over MCP (/api/agent_builder/mcp). Kibana Maps shows the same layers.',tech:'Elastic Agent Builder, ES|QL, MCP, Kibana Maps. Mistral connector (mistral-medium-latest)',file:'elastic/agent-builder-tools.json, elastic/setup-agent-builder.js'}
+  };
+  var E=[['e1','s311','enrich'],['e2','spit','enrich'],['e3','enrich','es'],['e4','enrich','server'],['e5','es','server'],['e6','server','compass'],['e7','compass','llm'],['e8','compass','es'],['e9','server','ui'],['e10','es','kibana'],['e11','kibana','llm']];
+  var ROUTES={
+    live:{nodes:['s311','spit','enrich','es','server','compass','llm','ui'],edges:['e1','e2','e3','e4','e5','e6','e7','e8','e9']},
+    kibana:{nodes:['s311','spit','enrich','es','kibana','llm'],edges:['e1','e2','e3','e10','e11']}
+  };
+  var Q={
+    charity:[
+      ['ui',[],'You ask: "We run a hygiene van tonight, 6 to 9pm, in the Tenderloin. Where should we stop?" The web UI sends it to POST /api/chat with persona = charity.'],
+      ['server',['e9'],'The BlockSignal server receives the request and hands it to Outreach Compass.'],
+      ['compass',['e6'],'Outreach Compass sends the conversation and its 5 tool definitions to Mistral.'],
+      ['llm',['e7'],'Mistral picks a tool: hotspots({neighborhood: "Tenderloin", open_at: "18:00"}).'],
+      ['es',['e8'],'Elasticsearch runs it: a geotile_grid aggregation finds the busiest blocks, and geo_distance finds the nearest Pit Stops open at 6pm.'],
+      ['compass',['e8'],'Real numbers come back. Compass streams a tool_result event with blocks to highlight, and may call more tools such as nearest_open_help.'],
+      ['llm',['e7'],'Mistral writes the answer: 3 to 4 stops in order, with each block\'s gap, trend and nearby closed Pit Stops.'],
+      [['server','ui'],['e6','e9'],'The answer streams back as NDJSON. The map highlights the blocks and numbers the route stops.']
+    ],
+    mayor:[
+      ['ui',[],'You ask: "Which 5 blocks in D6 have the worst service gap this week?" The web UI sends it to POST /api/chat with persona = mayor.'],
+      ['server',['e9'],'The BlockSignal server receives the request and hands it to Outreach Compass.'],
+      ['compass',['e6'],'Outreach Compass sends the conversation and its 5 tool definitions to Mistral.'],
+      ['llm',['e7'],'Mistral picks a tool: hotspots({district: "6", limit: 5}).'],
+      ['es',['e8'],'Elasticsearch runs it: geotile_grid hotspots in District 6, geo_distance to the nearest open Pit Stop, and an ES|QL week-over-week trend.'],
+      ['compass',['e8'],'Real numbers come back. Compass streams a tool_result event, and may also call suggest_pitstop_site for the best new Pit Stop location.'],
+      ['llm',['e7'],'Mistral writes the answer: the 5 blocks ranked with their numbers, and where a mobile Pit Stop would cover the most reports.'],
+      [['server','ui'],['e6','e9'],'The answer streams back as NDJSON. The map highlights the 5 blocks and the suggested site.']
+    ]
+  };
+  var btns={}; arch.querySelectorAll('.node').forEach(function(b){btns[b.dataset.node]=b; b.setAttribute('aria-pressed','false');});
+  var lines={};
+  var state={sel:null,route:'none',q:'charity',step:0,timer:null};
+
+  function clip(c,tx,ty){var dx=tx-c.x,dy=ty-c.y; if(!dx&&!dy) return c; var s=Math.min(dx?(c.w/2+6)/Math.abs(dx):1e9,dy?(c.h/2+6)/Math.abs(dy):1e9); return {x:c.x+dx*s,y:c.y+dy*s};}
+  function box(el,base){var r=el.getBoundingClientRect();return {x:r.left-base.left+r.width/2,y:r.top-base.top+r.height/2,w:r.width,h:r.height};}
+  function draw(){
+    var base=arch.getBoundingClientRect();
+    svg.setAttribute('viewBox','0 0 '+base.width+' '+base.height);
+    while(svg.firstChild) svg.removeChild(svg.firstChild);
+    E.forEach(function(e){
+      var a=box(btns[e[1]],base), b=box(btns[e[2]],base);
+      var p=clip(a,b.x,b.y), q=clip(b,a.x,a.y);
+      var l=document.createElementNS('http://www.w3.org/2000/svg','line');
+      l.setAttribute('x1',p.x);l.setAttribute('y1',p.y);l.setAttribute('x2',q.x);l.setAttribute('y2',q.y);
+      svg.appendChild(l); lines[e[0]]=l;
+    });
+    render();
+  }
+  function render(){
+    var hn={},he={};
+    if(state.step>0){var st=Q[state.q][state.step-1];[].concat(st[0]).forEach(function(n){hn[n]=1;});st[1].forEach(function(e){he[e]=1;});}
+    else if(state.route!=='none'){ROUTES[state.route].nodes.forEach(function(n){hn[n]=1;});ROUTES[state.route].edges.forEach(function(e){he[e]=1;});}
+    if(state.sel){hn[state.sel]=1;E.forEach(function(e){if(e[1]===state.sel||e[2]===state.sel) he[e[0]]=1;});}
+    Object.keys(btns).forEach(function(k){btns[k].classList.toggle('hl',!!hn[k]);btns[k].setAttribute('aria-pressed',String(k===state.sel));});
+    Object.keys(lines).forEach(function(k){lines[k].classList.toggle('on',!!he[k]);});
+    arch.classList.toggle('dim',Object.keys(hn).length>0);
+  }
+  function name(id){var b=btns[id].cloneNode(true);b.querySelectorAll('.own,.branch').forEach(function(x){x.parentNode.removeChild(x);});return b.textContent.trim();}
+  function esc(t){return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+  function showDetail(id){
+    var n=N[id]; var links=E.filter(function(e){return e[1]===id||e[2]===id;}).map(function(e){return name(e[1]===id?e[2]:e[1]);});
+    detail.innerHTML='<h3>'+esc(name(id))+'</h3><p class="muted" style="margin:0 0 8px">'+esc(n.own)+'</p><p>'+esc(n.what)+'</p><dl><dt>Sponsor tech</dt><dd>'+esc(n.tech)+'</dd><dt>File</dt><dd><code>'+esc(n.file)+'</code></dd><dt>Connects to</dt><dd>'+esc(links.join(', '))+'</dd></dl>';
+  }
+  Object.keys(btns).forEach(function(k){btns[k].addEventListener('click',function(){
+    state.sel=(state.sel===k?null:k);
+    if(state.sel) showDetail(k); else detail.innerHTML=EMPTY;
+    render();
+  });});
+
+  var play=document.getElementById('t-play'),prev=document.getElementById('t-prev'),next=document.getElementById('t-next'),count=document.getElementById('t-count'),cap=document.getElementById('t-caption');
+  function total(){return Q[state.q].length;}
+  function updStep(){
+    count.textContent='Step '+state.step+' of '+total();
+    cap.textContent=state.step?Q[state.q][state.step-1][2]:'Press Play or Next to follow the question hop by hop.';
+    prev.disabled=state.step<=0; next.disabled=state.step>=total();
+    render();
+  }
+  function stop(){if(state.timer){clearInterval(state.timer);state.timer=null;} play.textContent='Play';}
+  function go(n){state.step=Math.max(0,Math.min(total(),n));updStep();}
+  play.addEventListener('click',function(){
+    if(state.timer){stop();return;}
+    go(state.step===0||state.step>=total()?1:state.step+1);
+    if(motionOK&&state.step<total()){
+      play.textContent='Pause';
+      state.timer=setInterval(function(){go(state.step+1); if(state.step>=total()) stop();},2800);
+    }
+  });
+  prev.addEventListener('click',function(){stop();go(state.step-1);});
+  next.addEventListener('click',function(){stop();go(state.step+1);});
+  document.querySelectorAll('input[name="q"]').forEach(function(r){r.addEventListener('change',function(){state.q=r.value;stop();go(0);});});
+  document.querySelectorAll('input[name="route"]').forEach(function(r){r.addEventListener('change',function(){state.route=r.value;stop();go(0);});});
+
+  if(window.ResizeObserver) new ResizeObserver(draw).observe(arch); else window.addEventListener('resize',draw);
+  if(document.fonts&&document.fonts.ready) document.fonts.ready.then(draw);
+  draw(); updStep();
+})();
+</script>
+</body>
+</html>

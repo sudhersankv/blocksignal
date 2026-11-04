@@ -22,7 +22,24 @@
     return Math.round(2 * R * Math.asin(Math.sqrt(h)));
   }
   const fmtDist = (m) => (m == null ? "?" : m >= 1000 ? (m / 1000).toFixed(1) + " km" : m + " m");
-  const trendHtml = (t) => (t > 0 ? `<span class="up">&#9650;${t}</span>` : t < 0 ? `<span class="down">&#9660;${-t}</span>` : `<span class="flat">&#9632;0</span>`);
+  // Trend never relies on color alone: arrow + explicit sign + hidden words for screen readers.
+  const trendHtml = (t) => (t > 0
+    ? `<span class="up"><span aria-hidden="true">&#9650;</span> +${t}<span class="sr-only"> more reports than the week before</span></span>`
+    : t < 0 ? `<span class="down"><span aria-hidden="true">&#9660;</span> &minus;${-t}<span class="sr-only"> fewer reports than the week before</span></span>`
+    : `<span class="flat"><span aria-hidden="true">&#9632;</span> 0<span class="sr-only"> change from the week before</span></span>`);
+  const trendText = (t) => (t > 0 ? `up ${t}` : t < 0 ? `down ${-t}` : "no change");
+  const reduceMotion = () => window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  // Focus management for dialogs: trap Tab inside, remember the opener, restore on close.
+  const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea, [tabindex]:not([tabindex="-1"])';
+  function trapFocus(container, e) {
+    if (e.key !== "Tab") return;
+    const f = $$(FOCUSABLE, container).filter((el) => el.offsetParent !== null || el === document.activeElement);
+    if (!f.length) { e.preventDefault(); return; }
+    const first = f[0], last = f[f.length - 1];
+    if (e.shiftKey && (document.activeElement === first || !container.contains(document.activeElement))) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && (document.activeElement === last || !container.contains(document.activeElement))) { e.preventDefault(); first.focus(); }
+  }
 
   // ---------------------------------------------------------------- state
   const S = {
@@ -101,8 +118,9 @@
       GLYPH[ch].forEach((row, y) => [...row].forEach((bit, x) => {
         if (bit !== "1") return;
         const X = li * 6 + x;
-        const c = li < 5 ? rampColor((X / (5 * 6)) * 100) : (y % 2 ? "#38f3ff" : "#9ffaff");
-        shadow += `<rect x="${X + 1}" y="${y + 1}" width="1" height="1" fill="${li < 5 ? "#5a1200" : "#7a0a66"}"/>`;
+        // Ink letters with a stepped shadow that runs through the Mistral ramp (yellow -> red) across the word.
+        const c = "#1E1E1E";
+        shadow += `<rect x="${X + 1}" y="${y + 1}" width="1" height="1" fill="${rampColor((X / cols) * 100)}"/>`;
         fill += `<rect x="${X}" y="${y}" width="1" height="1" fill="${c}"/>`;
       }));
     });
@@ -111,24 +129,30 @@
   // 10x9 pixel toilet sprite. X = outline, W = body, D = dark
   const TOILET = ["..XXXX....", "..XWWX....", "..XXXX....", "XXXXXXXXX.", "XWWWWWWWX.", ".XWWWWWX..", "..XWWWX...", "...XWX....", "..XXXXX..."];
   function spriteSVG(open) {
-    const pal = open ? { X: "#38f3ff", W: "#dffcff" } : { X: "#a3243a", W: "#4a1a22" };
+    const pal = open ? { X: "#0F7A3D", W: "#FFFFFF" } : { X: "#B42318", W: "#F4D3CF" };
     let out = "";
     TOILET.forEach((row, y) => [...row].forEach((ch, x) => { if (pal[ch]) out += `<rect x="${x}" y="${y}" width="1" height="1" fill="${pal[ch]}"/>`; }));
-    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 9" shape-rendering="crispEdges">${out}</svg>`;
+    // closed sprites also get a diagonal ink strike so the shape differs, not just the color
+    if (!open) for (let i = 0; i < 9; i++) out += `<rect x="${i}" y="${8 - i}" width="1" height="1" fill="#1E1E1E"/>`;
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 9" shape-rendering="crispEdges" aria-hidden="true">${out}</svg>`;
   }
+  const spriteHTML = (open) => `<div class="ps">${spriteSVG(open)}<span class="pl"><span aria-hidden="true">${open ? "&#10003;" : "&#10005;"}</span><span class="plw"> ${open ? "OPEN" : "CLOSED"}</span></span></div>`;
 
   // ---------------------------------------------------------------- map
   let map, cellLayer, psLayer, fxLayer;
   const cellPaths = new Map(), psMarkers = new Map();
   function initMap() {
     map = L.map("map", { zoomControl: true, attributionControl: true, preferCanvas: false, zoomSnap: 0.5 }).setView([37.773, -122.43], 13);
-    // CARTO raster basemaps now need an API key, so use OSM tiles and push them to night-teal with a CSS filter.
+    // CARTO raster basemaps now need an API key, so use OSM tiles with a gentle warm CSS filter (.base-tiles).
     L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 19, className: "base-tiles",
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
     }).addTo(map);
     cellLayer = L.layerGroup().addTo(map);
     psLayer = L.layerGroup().addTo(map);
+    // At city-wide zoom the OPEN/CLOSED words overlap downtown, so they collapse to a ✓/✕ badge (still not color-only).
+    const syncZoom = () => map.getContainer().classList.toggle("zoomed-out", map.getZoom() < 14);
+    map.on("zoomend", syncZoom); syncZoom();
     fxLayer = L.layerGroup().addTo(map);
     window.addEventListener("resize", () => map.invalidateSize());
   }
@@ -140,11 +164,11 @@
     [...S.cells].reverse().forEach((c) => {
       const top = topIds.has(c.id), g = c.gapScore || 0;
       const r = L.rectangle(c.bounds, {
-        color: top ? "#ff2fd2" : "#000", weight: top ? 3 : 1, opacity: 1,
-        fillColor: rampColor(g), fillOpacity: 0.12 + 0.68 * (g / 100),
+        color: "#1E1E1E", weight: top ? 2 : 0.5, opacity: top ? 1 : 0.35,
+        fillColor: rampColor(g), fillOpacity: 0.35 + 0.25 * (g / 100),
         className: "cell" + (top ? " top" : "") + (S.selected === c.id ? " sel" : ""),
       });
-      r.bindTooltip(`<b>${esc(c.neighborhood || "Block")}</b> GAP ${g} · 7D ${c.count7}`, { className: "pxtip", direction: "top", sticky: true });
+      r.bindTooltip(`<b>${esc(c.neighborhood || "Block")}</b><br>Gap score ${g} · ${c.count7} reports in 7 days`, { className: "pxtip", direction: "top", sticky: true });
       r.on("click", () => { blip(520); openInspect(c.id); });
       r.addTo(cellLayer); cellPaths.set(c.id, r);
     });
@@ -154,8 +178,9 @@
     psLayer.clearLayers(); psMarkers.clear();
     S.pitstops.forEach((p) => {
       if (p.lat == null || p.lon == null) return;
-      const icon = L.divIcon({ className: "sprite " + (p.openNow ? "ps-open" : "ps-closed"), html: spriteSVG(p.openNow), iconSize: [24, 22], iconAnchor: [12, 11] });
-      const m = L.marker([p.lat, p.lon], { icon, keyboard: true, title: p.name, zIndexOffset: p.openNow ? 500 : 0 });
+      const w = p.openNow ? 52 : 66;
+      const icon = L.divIcon({ className: "sprite " + (p.openNow ? "ps-open" : "ps-closed"), html: spriteHTML(p.openNow), iconSize: [w, 42], iconAnchor: [w / 2, 11] });
+      const m = L.marker([p.lat, p.lon], { icon, keyboard: true, title: `${p.name}: ${p.openNow ? "open" : "closed"}`, alt: `${p.name}, ${p.openNow ? "open" : "closed"}`, zIndexOffset: p.openNow ? 500 : 0 });
       m.bindTooltip(`<b>${esc(p.name)}</b><br>${p.openNow ? "OPEN" : "CLOSED"} · ${esc(p.hoursRaw || "hours unknown")}`, { className: "pxtip", direction: "top", offset: [0, -10] });
       m.addTo(psLayer); psMarkers.set(p.id, m);
     });
@@ -178,16 +203,16 @@
         // ensure the cell exists on the map even if outside the district filter
         let p = cellPaths.get(c.id);
         if (!p) {
-          p = L.rectangle(c.bounds, { color: "#fff", weight: 3, fillColor: rampColor(c.gapScore), fillOpacity: 0.8, className: "cell" }).addTo(fxLayer);
+          p = L.rectangle(c.bounds, { color: "#1E1E1E", weight: 3, fillColor: rampColor(c.gapScore), fillOpacity: 0.6, className: "cell" }).addTo(fxLayer);
         }
         const el = p.getElement && p.getElement();
         if (el) { el.classList.add("hl"); setTimeout(() => el.classList.remove("hl"), 6000); }
         const ll = [c.lat, c.lon]; latlngs.push(ll);
-        L.marker(ll, { icon: L.divIcon({ className: "wp", html: String(i + 1), iconSize: [24, 24], iconAnchor: [12, 12] }), zIndexOffset: 1000, interactive: false }).addTo(fxLayer);
+        L.marker(ll, { icon: L.divIcon({ className: "wp", html: String(i + 1), iconSize: [28, 28], iconAnchor: [14, 14] }), zIndexOffset: 1000, interactive: false }).addTo(fxLayer);
       });
       if (route && cells.length > 1) {
-        L.polyline(latlngs, { color: "#38f3ff", weight: 6, opacity: 0.25, interactive: false }).addTo(fxLayer);
-        L.polyline(latlngs, { color: "#ff2fd2", weight: 3, dashArray: "8 8", className: "route", interactive: false }).addTo(fxLayer);
+        L.polyline(latlngs, { color: "#FFFFFF", weight: 9, opacity: 0.9, interactive: false }).addTo(fxLayer);
+        L.polyline(latlngs, { color: "#B83A00", weight: 5, opacity: 1, className: "route", interactive: false }).addTo(fxLayer);
       }
     }
     pts.forEach((p) => {
@@ -196,8 +221,9 @@
       if (el) { el.classList.add("ps-hl"); setTimeout(() => el.classList.remove("ps-hl"), 6000); }
     });
     blip(880, 0.05); setTimeout(() => blip(660, 0.05), 60);
-    if (latlngs.length === 1) map.flyTo(latlngs[0], Math.max(map.getZoom(), 16), { duration: 0.9 });
-    else map.flyToBounds(L.latLngBounds(latlngs).pad(0.35), { duration: 0.9, maxZoom: 16 });
+    const anim = !reduceMotion();
+    if (latlngs.length === 1) map.setView(latlngs[0], Math.max(map.getZoom(), 16), { animate: anim, duration: 0.9 });
+    else map.fitBounds(L.latLngBounds(latlngs).pad(0.35), { animate: anim, duration: 0.9, maxZoom: 16 });
   }
 
   // ---------------------------------------------------------------- HUD
@@ -205,14 +231,14 @@
     $("#sReports").textContent = fmt(s.counts?.reports);
     $("#sPitstops").textContent = fmt(s.counts?.pitstops);
     $("#sCells").textContent = fmt(s.counts?.cells);
-    $("#chipMistral").textContent = s.mistral ? "MISTRAL ✓" : "MISTRAL OFF";
+    $("#chipMistral").textContent = s.mistral ? "Mistral: on" : "Mistral: off";
     const e = s.elastic || {}, ok = e.enabled && e.connected;
     const ce = $("#chipElastic");
-    ce.textContent = ok ? "ELASTIC CONNECTED" : "ELASTIC LOCAL";
+    ce.textContent = ok ? "Elastic: connected" : "Elastic: local";
     ce.classList.toggle("local", !ok);
     if (e.cluster) ce.title = "Cluster: " + e.cluster;
     const mc = $("#modeChip");
-    mc.textContent = S.mock ? "DEMO DATA" : "LIVE";
+    mc.textContent = S.mock ? "DEMO DATA" : "LIVE DATA";
     mc.className = "chip " + (S.mock ? "chip-mock" : "chip-live");
     mc.title = S.mock ? "Backend at /api is offline. Showing sample data." : `Data as of ${s.asOf || "now"}`;
   }
@@ -220,25 +246,28 @@
   function renderLeader() {
     const ol = $("#leader");
     const top = S.cells.slice(0, 10);
-    if (!top.length) { ol.innerHTML = `<li class="dim">NO BLOCKS FOR THIS DISTRICT</li>`; return; }
-    ol.innerHTML = top.map((c, i) => `
-      <li data-id="${esc(c.id)}" tabindex="0" class="${S.selected === c.id ? "sel" : ""}" title="${esc(c.neighborhood)}: gap ${c.gapScore}, ${c.count7} reports in 7 days">
-        <span class="rk">${String(i + 1).padStart(2, "0")}</span>
-        <span class="nm">${esc(c.neighborhood || c.id)}${c.district ? ` <span class="dim">D${esc(c.district)}</span>` : ""}</span>
-        <span class="sc">${c.gapScore}<span class="tr">${trendHtml(c.trend ?? (c.count7 - c.countPrev7))}</span></span>
-        <span class="bar"><i style="width:${c.gapScore}%;--full:${c.gapScore ? (10000 / c.gapScore) : 100}%"></i></span>
-      </li>`).join("");
-    $$("li[data-id]", ol).forEach((li) => {
-      const go = () => { const c = S.cellById.get(li.dataset.id); blip(520); openInspect(c.id); map.flyToBounds(c.bounds, { maxZoom: 16, duration: 0.8 }); };
-      li.addEventListener("click", go);
-      li.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } });
-    });
+    if (!top.length) { ol.innerHTML = `<li class="empty">No blocks found for this district.</li>`; return; }
+    ol.innerHTML = top.map((c, i) => {
+      const t = c.trend ?? (c.count7 - c.countPrev7);
+      const label = `Rank ${i + 1}: ${c.neighborhood || c.id}${c.district ? ", District " + c.district : ""}. Gap score ${c.gapScore}, ${c.count7} reports in 7 days, trend ${trendText(t)}. Show on map.`;
+      return `<li><button type="button" class="row" data-id="${esc(c.id)}" aria-pressed="${S.selected === c.id}" aria-label="${esc(label)}">
+        <span class="rk${i < 3 ? " top3" : ""}" aria-hidden="true">${String(i + 1).padStart(2, "0")}</span>
+        <span class="nm" aria-hidden="true">${esc(c.neighborhood || c.id)}${c.district ? ` <span class="dim">D${esc(c.district)}</span>` : ""}</span>
+        <span class="sc" aria-hidden="true">${c.gapScore}<span class="tr">${trendHtml(t)}</span></span>
+        <span class="bar" aria-hidden="true"><i style="width:${c.gapScore}%;--full:${c.gapScore ? (10000 / c.gapScore) : 100}%"></i></span>
+      </button></li>`;
+    }).join("");
+    $$("button[data-id]", ol).forEach((b) => b.addEventListener("click", () => {
+      const c = S.cellById.get(b.dataset.id); blip(520);
+      map.fitBounds(c.bounds, { maxZoom: 16, animate: !reduceMotion(), duration: 0.8 });
+      openInspect(c.id, { opener: b });
+    }));
   }
 
   function setPersona(p) {
     S.persona = p;
     try { localStorage.setItem("bs.persona", p); } catch (e) { /* ignore */ }
-    $$(".player").forEach((b) => b.setAttribute("aria-checked", String(b.dataset.persona === p)));
+    $$(".player").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.persona === p)));
   }
 
   function atISO(key) {
@@ -262,54 +291,60 @@
     S.pitstops = r.pitstops || [];
     S.psById = new Map(S.pitstops.map((p) => [p.id, p]));
     drawPitstops();
-    if (S.selected) openInspect(S.selected, { refetch: false });
+    if (S.selected) openInspect(S.selected, { refetch: false, focus: false });
   }
 
   // ---------------------------------------------------------------- inspect
   const OUT = [
-    ["resolved", "#5dff9b", "RESOLVED"], ["services_offered", "#38f3ff", "SERVICES"], ["declined", "#FFAF00", "DECLINED"],
-    ["not_found", "#7d8fa0", "NOT FOUND"], ["medical", "#ff2fd2", "MEDICAL"], ["cancelled", "#3a4a55", "CANCELLED"],
-    ["open", "#FA500F", "OPEN"], ["other", "#c9d6dc", "OTHER"],
+    ["resolved", "#0F7A3D", "Resolved"], ["services_offered", "#1D4ED8", "Services offered"], ["declined", "#FFAF00", "Declined"],
+    ["not_found", "#8C8577", "Not found"], ["medical", "#7C3AED", "Medical"], ["cancelled", "#4A4033", "Cancelled"],
+    ["open", "#FA500F", "Still open"], ["other", "#E6DCC3", "Other"],
   ];
   function nearestOpen(c) {
     let best = null;
     S.pitstops.forEach((p) => { if (!p.openNow || p.lat == null) return; const d = distM(c.lat, c.lon, p.lat, p.lon); if (!best || d < best.d) best = { p, d }; });
     return best;
   }
-  async function openInspect(id, { refetch = true } = {}) {
+  let inspectOpener = null;
+  async function openInspect(id, { refetch = true, opener = null, focus = true } = {}) {
     const c = S.allCellById.get(id) || S.cellById.get(id);
     if (!c) return;
     $$(".cell.sel").forEach((el) => el.classList.remove("sel"));
     S.selected = id;
     const el = cellPaths.get(id)?.getElement(); if (el) el.classList.add("sel");
-    $$("#leader li").forEach((li) => li.classList.toggle("sel", li.dataset.id === id));
+    $$("#leader button[data-id]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.id === id)));
     $("#mapHint").hidden = true;
-    const box = $("#inspect"); box.hidden = false;
+    const box = $("#inspect");
+    if (focus && (opener || box.hidden)) inspectOpener = opener || (document.activeElement !== document.body ? document.activeElement : null);
+    box.hidden = false;
     const o = c.outcomes || {}, tot = OUT.reduce((a, [k]) => a + (o[k] || 0), 0) || 1;
     const near = nearestOpen(c);
-    const when = S.at === "now" ? "NOW" : $(`#timeSeg [data-at="${S.at}"]`).textContent;
+    const when = S.at === "now" ? "now" : "at " + $(`#timeSeg [data-at="${S.at}"]`).textContent;
     const nearHtml = near
-      ? `<div class="near">NEAREST OPEN HELP (${esc(when)})<br><b>${esc(near.p.name)}</b> · ${fmtDist(near.d)}</div>`
-      : c.nearest ? `<div class="near closed">NO PIT STOP OPEN ${esc(when)}.<br>Closest: ${esc(c.nearest.name)} · ${fmtDist(c.nearest.distanceM)}</div>`
-      : `<div class="near closed">NO PIT STOP DATA</div>`;
+      ? `<div class="near"><span class="st ok">&#10003; OPEN</span> nearest help ${esc(when)}:<br><b>${esc(near.p.name)}</b> · ${fmtDist(near.d)} away</div>`
+      : c.nearest ? `<div class="near closed"><span class="st no">&#10005; CLOSED</span> No Pit Stop is open ${esc(when)}.<br>Closest: ${esc(c.nearest.name)} · ${fmtDist(c.nearest.distanceM)}</div>`
+      : `<div class="near closed">No Pit Stop data for this block.</div>`;
+    const mixItems = OUT.filter(([k]) => o[k]);
+    const mixLabel = "Crew outcomes, last 30 days: " + (mixItems.map(([k, , n]) => `${n} ${o[k]}`).join(", ") || "none");
     box.innerHTML = `
       <div class="ih">
-        <div><h3>INSPECT // ${esc(c.neighborhood || "BLOCK")}</h3><div class="sub">CELL ${esc(c.id)}${c.district ? " · DISTRICT " + esc(c.district) : ""}</div></div>
-        <button class="pxbtn small" type="button" id="inspClose" aria-label="Close inspect card">X</button>
+        <div><h3 id="inspTitle">${esc(c.neighborhood || "Block")}</h3><div class="sub">Block ${esc(c.id)}${c.district ? " · District " + esc(c.district) : ""}</div></div>
+        <button class="pxbtn small" type="button" id="inspClose" aria-label="Close block details">&#10005;</button>
       </div>
-      <div class="ih"><span class="gapbig">GAP ${c.gapScore}</span><span>7D TREND ${trendHtml(c.trend ?? c.count7 - c.countPrev7)}</span></div>
+      <div class="ih gaprow"><span class="gapbig"><i style="--c:${rampColor(c.gapScore)}" aria-hidden="true"></i>Gap ${c.gapScore}</span><span class="trend">7-day trend ${trendHtml(c.trend ?? c.count7 - c.countPrev7)}</span></div>
       <div class="nums">
-        <div><b>${c.count7}</b><span>LAST 7D</span></div>
-        <div><b>${c.countPrev7}</b><span>PREV 7D</span></div>
-        <div><b>${c.count30}</b><span>30 DAYS</span></div>
+        <div><b>${c.count7}</b><span>Last 7 days</span></div>
+        <div><b>${c.countPrev7}</b><span>Prior 7 days</span></div>
+        <div><b>${c.count30}</b><span>30 days</span></div>
       </div>
       ${nearHtml}
-      <div><div class="lbl" style="margin-bottom:4px">CREW OUTCOMES (30D)</div>
-        <div class="mix" role="img" aria-label="Outcome mix">${OUT.filter(([k]) => o[k]).map(([k, col, n]) => `<i style="width:${(o[k] / tot) * 100}%;background:${col}" title="${n}: ${o[k]}"></i>`).join("")}</div>
-        <div class="mixkey">${OUT.filter(([k]) => o[k]).map(([k, col, n]) => `<span style="--c:${col}">${n} ${o[k]}</span>`).join("")}</div>
+      <div><div class="lbl" style="margin-bottom:6px">Crew outcomes (30 days)</div>
+        <div class="mix" role="img" aria-label="${esc(mixLabel)}">${mixItems.map(([k, col, n]) => `<i style="width:${(o[k] / tot) * 100}%;background:${col}" title="${n}: ${o[k]}"></i>`).join("")}</div>
+        <div class="mixkey" aria-hidden="true">${mixItems.map(([k, col, n]) => `<span style="--c:${col}">${n} ${o[k]}</span>`).join("")}</div>
       </div>
-      <ul class="notes" id="inspNotes"></ul>
-      <button class="pxbtn ask" type="button" id="inspAsk">ASK COMPASS ABOUT THIS BLOCK</button>`;
+      <ul class="notes" id="inspNotes" aria-label="Recent crew notes"></ul>
+      <button class="pxbtn ask" type="button" id="inspAsk">Ask Compass about this block</button>`;
+    if (focus) $("#inspClose").focus({ preventScroll: true });
     $("#inspClose").onclick = closeInspect;
     $("#inspAsk").onclick = () => {
       coin();
@@ -327,10 +362,13 @@
     }
   }
   function closeInspect() {
-    $("#inspect").hidden = true;
+    const box = $("#inspect"), wasOpen = !box.hidden;
+    box.hidden = true;
     $$(".cell.sel").forEach((el) => el.classList.remove("sel"));
-    $$("#leader li.sel").forEach((li) => li.classList.remove("sel"));
+    $$("#leader button[aria-pressed='true']").forEach((b) => b.setAttribute("aria-pressed", "false"));
     S.selected = null;
+    if (wasOpen && inspectOpener && document.contains(inspectOpener)) inspectOpener.focus();
+    inspectOpener = null;
   }
 
   // ---------------------------------------------------------------- markdown (tiny, safe)
@@ -384,20 +422,20 @@
     if (!text || S.busy) return;
     S.busy = true; $("#sendBtn").disabled = true; $$(".quest").forEach((b) => (b.disabled = true));
     clearFx();
-    logLine("you" + (S.persona === "charity" ? " p2" : ""), esc(text));
+    logLine("you", `<span class="who">You, as ${S.persona === "charity" ? "Outreach charity" : "Mayor's Office"}</span>${esc(text)}`);
     S.messages.push({ role: "user", content: text });
     const body = { messages: S.messages.slice(-10), persona: S.persona };
     const sel = extra.selectedCell || S.selected; if (sel) body.selectedCell = sel;
     const route = S.persona === "charity";
     const casts = new Map();
-    let thinking = logLine("cast", `&gt; THINKING<span class="cur"></span>`);
+    let thinking = logLine("cast", `Compass is thinking…<span class="cur" aria-hidden="true"></span>`);
     let answered = false;
     try {
       for await (const ev of api.chat(body)) {
         if (thinking) { thinking.remove(); thinking = null; }
         if (ev.type === "tool_call") {
           blip(440, 0.04);
-          casts.set(ev.id, logLine("cast", `&gt; CAST ${esc(ev.name)}(${esc(argStr(ev.args))})<span class="cur"></span>`));
+          casts.set(ev.id, logLine("cast", `&rarr; Tool: ${esc(ev.name)}(${esc(argStr(ev.args))})<span class="cur" aria-hidden="true"></span>`));
         } else if (ev.type === "tool_result") {
           const c = casts.get(ev.id); if (c) c.querySelector(".cur")?.remove();
           logLine("res", esc(ev.summary || `${ev.name} done`));
@@ -407,24 +445,32 @@
           logLine("ans md", md(ev.text));
           S.messages.push({ role: "assistant", content: ev.text });
         } else if (ev.type === "error") {
-          logLine("err", "! " + esc(ev.message || "Agent error"));
+          logLine("err", "Error: " + esc(ev.message || "Agent error"));
         } else if (ev.type === "done") break;
       }
       if (!answered) logLine("sys", "Compass returned no answer. Try rephrasing the question.");
     } catch (e) {
       if (thinking) thinking.remove();
-      logLine("err", `! Compass could not be reached (${esc(e.message)}). Check that the server is running on :8787.`);
+      logLine("err", `Compass could not be reached (${esc(e.message)}). Check that the server is running on :8787.`);
     } finally {
       $$(".cast .cur").forEach((c) => c.remove());
       S.busy = false; $("#sendBtn").disabled = false; $$(".quest").forEach((b) => (b.disabled = false));
     }
   }
 
+  let modalOpener = null;
+  function closeModal() {
+    const modal = $("#modal"); if (modal.hidden) return;
+    modal.hidden = true;
+    if (modalOpener && document.contains(modalOpener)) modalOpener.focus();
+    modalOpener = null;
+  }
   async function openBriefing() {
     const district = S.district || "6";
     const modal = $("#modal"), bodyEl = $("#modalBody");
-    $("#modalTitle").textContent = `DISTRICT ${district} BRIEFING`;
-    bodyEl.innerHTML = `<p class="blink">COMPILING MEMO...</p>`;
+    modalOpener = document.activeElement;
+    $("#modalTitle").textContent = `District ${district} briefing`;
+    bodyEl.innerHTML = `<p class="loading">Compiling the briefing memo. This can take up to a minute…</p>`;
     modal.hidden = false; $("#modalClose").focus(); coin();
     try { const r = await api.briefing(district); bodyEl.innerHTML = md(r.markdown || "_No memo returned._"); }
     catch (e) { bodyEl.innerHTML = `<p class="err">Briefing failed: ${esc(e.message)}. Try again once the server is up.</p>`; }
@@ -434,56 +480,55 @@
   function wire() {
     $$(".player").forEach((b) => b.addEventListener("click", () => { setPersona(b.dataset.persona); coin(); }));
     $$("#timeSeg button").forEach((b) => b.addEventListener("click", async () => {
-      $$("#timeSeg button").forEach((x) => { x.classList.toggle("on", x === b); x.setAttribute("aria-checked", String(x === b)); });
-      S.at = b.dataset.at; $("#atLabel").textContent = "AT: " + b.textContent; blip(330);
+      $$("#timeSeg button").forEach((x) => { x.classList.toggle("on", x === b); x.setAttribute("aria-pressed", String(x === b)); });
+      S.at = b.dataset.at; blip(330);
       try { await loadPitstops(); } catch (e) { console.error(e); }
     }));
     const sel = $("#district");
-    for (let d = 1; d <= 11; d++) sel.insertAdjacentHTML("beforeend", `<option value="${d}">DISTRICT ${d}</option>`);
+    for (let d = 1; d <= 11; d++) sel.insertAdjacentHTML("beforeend", `<option value="${d}">District ${d}</option>`);
     sel.addEventListener("change", async () => {
       S.district = sel.value; closeInspect(); clearFx();
       try {
         await loadCells();
-        if (S.cells.length) map.flyToBounds(L.latLngBounds(S.cells.map((c) => [c.lat, c.lon])).pad(0.1), { duration: 0.8 });
+        if (S.cells.length) map.fitBounds(L.latLngBounds(S.cells.map((c) => [c.lat, c.lon])).pad(0.1), { animate: !reduceMotion(), duration: 0.8 });
       } catch (e) { console.error(e); }
     });
     $$(".quest").forEach((b) => b.addEventListener("click", () => { setPersona(b.dataset.persona); coin(); sendChat(b.dataset.q); }));
     $("#chatForm").addEventListener("submit", (e) => { e.preventDefault(); const i = $("#chatInput"); const v = i.value; i.value = ""; sendChat(v); });
     $("#briefBtn").addEventListener("click", openBriefing);
-    $("#modalClose").addEventListener("click", () => ($("#modal").hidden = true));
-    $("#modal").addEventListener("click", (e) => { if (e.target.id === "modal") e.currentTarget.hidden = true; });
-    document.addEventListener("keydown", (e) => { if (e.key === "Escape") { $("#modal").hidden = true; closeInspect(); } });
+    $("#modalClose").addEventListener("click", closeModal);
+    $("#modal").addEventListener("click", (e) => { if (e.target.id === "modal") closeModal(); });
+    $("#modal").addEventListener("keydown", (e) => trapFocus($(".modal-box"), e));
+    $("#inspect").addEventListener("keydown", (e) => trapFocus($("#inspect"), e));
+    document.addEventListener("keydown", (e) => {
+      if (e.key !== "Escape") return;
+      if (!$("#modal").hidden) { closeModal(); return; }
+      if (!$("#inspect").hidden) closeInspect();
+    });
     $("#soundBtn").addEventListener("click", (e) => {
-      S.sfx = !S.sfx; e.currentTarget.textContent = "SFX: " + (S.sfx ? "ON" : "OFF"); e.currentTarget.setAttribute("aria-pressed", String(S.sfx)); coin();
+      S.sfx = !S.sfx; e.currentTarget.textContent = "Sound: " + (S.sfx ? "on" : "off"); e.currentTarget.setAttribute("aria-pressed", String(S.sfx)); coin();
     });
   }
 
-  // ---------------------------------------------------------------- boot
+  // ---------------------------------------------------------------- start (no boot screen: the app is usable immediately)
   async function boot() {
-    const wm = wordmarkSVG();
-    $("#wordmark").innerHTML = wm; $("#bootLogo").innerHTML = wm;
+    $("#wordmark").innerHTML = wordmarkSVG();
     setPersona(S.persona);
     initMap(); wire();
+    const statusEl = $("#mapStatus");
+    const step = (txt) => { statusEl.textContent = txt; };
 
-    const fill = $("#bootFill"), line = $("#bootLine"), bootEl = $("#boot");
-    let skipped = false;
-    const hide = () => { if (bootEl.classList.contains("gone")) return; bootEl.classList.add("gone"); setTimeout(() => { bootEl.hidden = true; map.invalidateSize(); }, 300); };
-    const skip = () => { skipped = true; hide(); };
-    bootEl.addEventListener("click", skip); window.addEventListener("keydown", skip, { once: true });
-    const step = (p, txt) => { fill.style.width = p + "%"; line.textContent = txt; };
-    const minTime = sleep(1200);
-
-    step(15, "DIALING 311 UPLINK...");
+    step("Loading city data…");
     const status = await api.status();
     renderStatus(status);
-    step(45, S.mock ? "BACKEND OFFLINE. LOADING DEMO CITY..." : "LOADING CITY GRID...");
-    try { await loadCells(); } catch (e) { console.error(e); logLine("err", "! Could not load blocks: " + esc(e.message)); }
-    step(75, "SPAWNING PIT STOPS...");
-    try { await loadPitstops(); } catch (e) { console.error(e); logLine("err", "! Could not load Pit Stops: " + esc(e.message)); }
-    step(100, "READY PLAYER ONE");
+    step(S.mock ? "Server offline. Loading demo data…" : "Loading map blocks…");
+    try { await loadCells(); } catch (e) { console.error(e); logLine("err", "Could not load blocks: " + esc(e.message)); }
+    step("Loading Pit Stops…");
+    try { await loadPitstops(); } catch (e) { console.error(e); logLine("err", "Could not load Pit Stops: " + esc(e.message)); }
     if (S.cells.length) map.fitBounds(L.latLngBounds(S.cells.slice(0, 40).map((c) => [c.lat, c.lon])).pad(0.2));
-    if (S.mock) logLine("sys", "DEMO MODE: the server is not responding, so the map and Compass use sample data.");
-    if (!skipped) { await minTime; await sleep(150); hide(); }
+    if (S.mock) logLine("sys", "Demo mode: the server is not responding, so the map and Compass use sample data.");
+    statusEl.hidden = true;
+    map.invalidateSize();
   }
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot); else boot();
