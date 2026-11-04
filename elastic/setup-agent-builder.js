@@ -2,12 +2,14 @@
 // Zero deps. Usage (from repo root):
 //   node --env-file=.env elastic/setup-agent-builder.js
 // Needs KIBANA_URL (e.g. https://<deployment>.kb.<region>.cloud.es.io) and ES_API_KEY (or KIBANA_API_KEY).
-// Optional: AGENT_CONNECTOR_ID = id of your Mistral connector, to run a smoke-test conversation.
+// Also creates a Mistral `.inference` connector (from MISTRAL_API_KEY) if none exists.
+// Add --smoke to run a test conversation through Mistral (AGENT_CONNECTOR_ID overrides the connector).
 import { readFile } from 'node:fs/promises';
 
 const KIBANA_URL = (process.env.KIBANA_URL || '').trim().replace(/\/+$/, '');
 const API_KEY = (process.env.KIBANA_API_KEY || process.env.ES_API_KEY || '').trim();
-const CONNECTOR_ID = (process.env.AGENT_CONNECTOR_ID || '').trim();
+let CONNECTOR_ID = (process.env.AGENT_CONNECTOR_ID || '').trim();
+const MISTRAL_API_KEY = (process.env.MISTRAL_API_KEY || '').trim();
 
 if (!KIBANA_URL || !API_KEY) {
   console.error('Set KIBANA_URL and ES_API_KEY (or KIBANA_API_KEY) in .env');
@@ -62,7 +64,29 @@ try {
   console.error(`agent ${spec.agent.id}: FAILED ${e.message}`);
 }
 
-if (CONNECTOR_ID && !failures) {
+// Mistral as the agent LLM: a native `.inference` connector (service "mistral", chat_completion).
+// Note: the OpenAI-compatible `.gen-ai` connector with apiProvider "Other" breaks on Mistral
+// ("duplicate tool_call_id" when a tool is called twice), so we use the inference connector instead.
+async function ensureMistralConnector() {
+  const list = await kbn('GET', '/api/actions/connectors');
+  const found = Array.isArray(list.json) && list.json.find((c) => c.connector_type_id === '.inference' && /mistral/i.test(c.name));
+  if (found) return found.id;
+  if (!MISTRAL_API_KEY) return '';
+  const r = await kbn('POST', '/api/actions/connector', {
+    name: 'Mistral Medium (inference)',
+    connector_type_id: '.inference',
+    config: { provider: 'mistral', taskType: 'chat_completion', inferenceId: 'mistral-chat-kbn', providerConfig: { model: 'mistral-medium-latest' } },
+    secrets: { providerSecrets: { api_key: MISTRAL_API_KEY } },
+  });
+  if (!r.ok) { console.error(`mistral connector -> ${r.status} ${JSON.stringify(r.json).slice(0, 300)}`); return ''; }
+  return r.json.id;
+}
+if (!CONNECTOR_ID) {
+  CONNECTOR_ID = await ensureMistralConnector();
+  if (CONNECTOR_ID) console.log(`connector Mistral: ${CONNECTOR_ID} (pick it in the Agent Builder chat model picker)`);
+}
+
+if (CONNECTOR_ID && !failures && process.argv.includes('--smoke')) {
   console.log('Smoke test conversation ...');
   const r = await kbn('POST', '/api/agent_builder/converse', {
     agent_id: spec.agent.id,

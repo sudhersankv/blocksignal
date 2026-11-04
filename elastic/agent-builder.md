@@ -8,11 +8,22 @@ available. In 9.1/9.2 you may need to enable it under **Stack Management > Advan
 
 ## 1. Add Mistral as the LLM (connector)
 
-1. Go to **Stack Management > Connectors > Create connector**. Pick **Mistral** if it's listed. If not, pick **OpenAI**
-   with provider **Other (OpenAI compatible)**, URL `https://api.mistral.ai/v1/chat/completions`, and default model
-   `mistral-medium-latest`.
-2. Paste your Mistral API key and save. Copy the connector id from the URL or the list.
-3. In **Agent Builder > Settings**, or in the agent chat's model picker, choose this connector so Outreach Compass uses Mistral.
+`elastic/setup-agent-builder.js` does this for you. It creates a native **AI Connector** (`.inference`, provider
+`mistral`, task `chat_completion`, model `mistral-medium-latest`) from `MISTRAL_API_KEY`. To do it by hand:
+
+```
+POST kbn:/api/actions/connector
+{ "name": "Mistral Medium (inference)", "connector_type_id": ".inference",
+  "config": { "provider": "mistral", "taskType": "chat_completion", "inferenceId": "mistral-chat-kbn",
+              "providerConfig": { "model": "mistral-medium-latest" } },
+  "secrets": { "providerSecrets": { "api_key": "<MISTRAL_API_KEY>" } } }
+```
+
+Don't use the OpenAI-compatible `.gen-ai` connector with provider "Other" for Mistral. Its tool calls get
+`tool_call_id` = tool name, and converse fails with `duplicate tool_call_id` as soon as a tool is called twice (tested).
+
+An agent has no stored LLM. Pick **Mistral Medium (inference)** in the Agent Builder chat's model picker, or pass
+`connector_id` to `/api/agent_builder/converse`. You can also make it the default under **Stack Management > Advanced Settings > GenAI default connector**.
 
 ## 2. Create the tools + agent
 
@@ -23,11 +34,11 @@ The definitions live in [`agent-builder-tools.json`](./agent-builder-tools.json)
 ```bash
 # .env needs KIBANA_URL=https://<deployment>.kb.<region>.cloud.es.io  (and ES_API_KEY, reused for Kibana)
 node --env-file=.env elastic/setup-agent-builder.js
-# optional smoke test through Mistral:
-AGENT_CONNECTOR_ID=<mistral-connector-id> node --env-file=.env elastic/setup-agent-builder.js
+# plus a smoke-test conversation through Mistral:
+node --env-file=.env elastic/setup-agent-builder.js --smoke
 ```
 
-The script upserts each tool (POST, falling back to PUT if it already exists), then the agent. At the end it prints the MCP URL.
+The script upserts each tool (POST, falling back to PUT if it already exists) and the agent, then creates the Mistral connector if it's missing. At the end it prints the MCP URL.
 
 ### Option B: Kibana Dev Tools console (`kbn:` prefix)
 
@@ -40,7 +51,7 @@ POST kbn:/api/agent_builder/tools
   "tags": ["blocksignal"],
   "configuration": {
     "query": "FROM sf311-encampments | WHERE requested >= NOW() - 14 days AND neighborhood IS NOT NULL AND (?district == \"\" OR district == ?district) | EVAL is_last7 = CASE(requested >= NOW() - 7 days, 1, 0), is_prev7 = CASE(requested < NOW() - 7 days, 1, 0) | STATS last7 = SUM(is_last7), prev7 = SUM(is_prev7) BY neighborhood | EVAL delta = last7 - prev7 | SORT delta DESC | LIMIT 15",
-    "params": { "district": { "type": "keyword", "description": "Supervisor district, e.g. \"6\", or \"\" for all" } }
+    "params": { "district": { "type": "string", "description": "Supervisor district, e.g. \"6\", or \"\" for all" } }
   }
 }
 ```
@@ -81,13 +92,14 @@ curl -s -X POST "$KB/api/agent_builder/converse" "${H[@]}" \
 
 | Tool id | Type | Params | What it shows off |
 |---|---|---|---|
-| `blocksignal.hotspots` | ES\|QL | `district` (keyword, "" = all), `days` (integer) | geo: `ST_X/ST_Y` grid + `ST_CENTROID_AGG`, outcome mix via `CASE` |
-| `blocksignal.nearest_open_help` | ES\|QL | `lat`, `lon` (double), `minute_of_day` (integer) | geo: `ST_DISTANCE`, open-now logic incl. overnight hours |
-| `blocksignal.search_notes` | ES\|QL | `query` (text), `district` (keyword) | `semantic_text` (Mistral `mistral-embed`) via `MATCH` + `_score` |
-| `blocksignal.trend` | ES\|QL | `district` (keyword) | `STATS ... BY` with last7/prev7 via `EVAL CASE` |
+| `blocksignal.hotspots` | ES\|QL | `district` (string, "" = all), `days` (integer) | geo: `ST_X/ST_Y` grid + `ST_CENTROID_AGG`, outcome mix via `CASE` |
+| `blocksignal.nearest_open_help` | ES\|QL | `lat`, `lon` (float), `minute_of_day` (integer) | geo: `ST_DISTANCE`, open-now logic incl. overnight hours |
+| `blocksignal.search_notes` | ES\|QL | `query` (string), `district` (string) | `semantic_text` (Mistral `mistral-embed`) via `MATCH` + `_score` |
+| `blocksignal.trend` | ES\|QL | `district` (string) | `STATS ... BY` with last7/prev7 via `EVAL CASE` |
 | `blocksignal.outcome_mix` | ES\|QL | `days` (integer) | aggregations by district x outcome |
 | `blocksignal.search_reports` | index_search | none | built-in search over `sf311-encampments` |
 
+ES|QL tool param types are `string | integer | float | boolean | date | ...` (`keyword`/`text`/`double` are rejected).
 Optional parameters are avoided on purpose: they aren't supported on every Agent Builder version. The agent instructions tell the LLM
 to pass `""` for "all districts".
 
