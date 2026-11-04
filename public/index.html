@@ -8,9 +8,10 @@
   <meta name="color-scheme" content="light">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;600&family=Silkscreen:wght@400;700&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@500..700&family=Space+Mono:ital,wght@0,400;0,700;1,400&display=swap">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
   <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="shop.css">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 8' shape-rendering='crispEdges'%3E%3Crect width='8' height='8' fill='%231E1E1E'/%3E%3Crect x='1' y='1' width='3' height='3' fill='%23FFD800'/%3E%3Crect x='4' y='1' width='3' height='3' fill='%23FF8205'/%3E%3Crect x='1' y='4' width='3' height='3' fill='%23FA500F'/%3E%3Crect x='4' y='4' width='3' height='3' fill='%23E10500'/%3E%3C/svg%3E">
 </head>
 <body>
@@ -66,6 +67,7 @@
           <div class="players" id="personaSeg">
             <button type="button" class="player" data-persona="mayor" id="pMayor" aria-pressed="false" aria-describedby="personaHelp">Mayor's Office</button>
             <button type="button" class="player" data-persona="charity" id="pCharity" aria-pressed="false" aria-describedby="personaHelp">Outreach charity</button>
+            <button type="button" class="player" data-persona="shop" id="pShop" aria-pressed="false" aria-describedby="personaHelp">Shop opener</button>
           </div>
           <p class="help-txt" id="personaHelp" aria-live="polite"></p>
         </fieldset>
@@ -87,7 +89,7 @@
           </select>
         </div>
 
-        <section class="board" aria-labelledby="boardTitle">
+        <section class="board" id="gapBoard" aria-labelledby="boardTitle">
           <div class="board-head">
             <h3 class="lbl" id="boardTitle">Worst gaps</h3>
             <button type="button" class="info-btn" data-pop="gapPop" aria-expanded="false" aria-controls="gapPop" aria-label="What is the gap score?"><span aria-hidden="true">i</span></button>
@@ -95,6 +97,12 @@
           <p class="cap" id="boardCap">Blocks ranked by gap score. Click one to see why. Score 0–100, relative to the worst block today.</p>
           <ol id="leader" class="leader" aria-describedby="boardCap"></ol>
           <button type="button" class="btn btn-outline btn-sm export" id="exportBtn">Export top gaps (CSV)</button>
+        </section>
+
+        <section class="board shop-board" id="shopBoard" aria-labelledby="shopTitle" hidden>
+          <div class="board-head"><h3 class="lbl" id="shopTitle">Storefront matches</h3></div>
+          <p class="cap" id="shopCap"></p>
+          <ol id="shopList" class="shop-list" aria-describedby="shopCap"></ol>
         </section>
       </aside>
 
@@ -111,6 +119,8 @@
             <ul class="keyrow">
               <li><span class="kk k-open" aria-hidden="true">✓</span> Open Pit Stop</li>
               <li><span class="kk k-closed" aria-hidden="true">✕</span> Closed</li>
+              <li class="shop-only"><span class="kk k-shop-top" aria-hidden="true">1</span> Top storefront pick</li>
+              <li class="shop-only"><span class="kk k-shop" aria-hidden="true">4</span> Other vacant storefront</li>
             </ul>
             <div class="lg-scale">1 block ≈ 330 m</div>
           </div>
@@ -131,6 +141,8 @@
           <p class="lbl" id="suggestLbl">Suggested questions</p>
           <button type="button" class="btn quest" data-persona="charity" data-q="Hygiene van tonight 6-9pm in the Tenderloin. Where should we stop?"><span class="qk">As an outreach charity</span>“Hygiene van tonight 6–9 PM in the Tenderloin. Where should we stop?”</button>
           <button type="button" class="btn quest" data-persona="mayor" data-q="Which 5 blocks in D6 · SoMa &amp; Mission Bay have the worst service gap this week and what should we do?"><span class="qk">As the Mayor's Office</span>“Which 5 blocks in D6 · SoMa &amp; Mission Bay have the worst service gap this week, and what should we do?”</button>
+          <button type="button" class="btn quest" data-persona="shop" data-q="I want to open a South Indian coffee shop in the Mission" hidden><span class="qk">As a shop opener</span>“I want to open a South Indian coffee shop in the Mission”</button>
+          <button type="button" class="btn quest" data-persona="shop" data-q="Quiero abrir una panadería mexicana en el Excelsior" lang="es" hidden><span class="qk" lang="en">As a shop opener, in Spanish</span>“Quiero abrir una panadería mexicana en el Excelsior”</button>
           <button type="button" class="btn btn-primary brief" id="briefBtn">Get a district briefing memo</button>
         </div>
         <div id="log" class="log" role="log" aria-live="polite" aria-label="Compass conversation" tabindex="0">
@@ -184,6 +196,7 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
   <script src="mock.js"></script>
+  <script src="shop-mock.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

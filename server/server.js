@@ -165,7 +165,14 @@ async function runBlockgap(q) {
   return new Promise((resolve, reject) => {
     // q is passed as an argv element (no shell), so it can't inject commands.
     execFile(PYTHON, [path.join(PY_DIR, 'blockgap_cli.py'), q], {
-      cwd: PY_DIR, timeout: 90000, maxBuffer: 20 * 1024 * 1024, env: process.env,
+      cwd: PY_DIR, timeout: 90000, maxBuffer: 20 * 1024 * 1024,
+      // Shop Opener data (vacant-spaces, sf-businesses, sf-311) may live in Guru's Elastic project.
+      env: {
+        ...process.env,
+        ES_URL: process.env.BLOCKGAP_ES_URL || process.env.ES_URL,
+        ES_API_KEY: process.env.BLOCKGAP_ES_API_KEY || process.env.ES_API_KEY,
+        PYTHONIOENCODING: 'utf-8',
+      },
     }, (err, stdout, stderr) => {
       if (err) return reject(new Error((stderr || err.message).toString().trim().split('\n').slice(-3).join(' ')));
       try { resolve(JSON.parse(stdout)); } catch { reject(new Error('blockgap returned invalid JSON')); }

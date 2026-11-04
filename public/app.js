@@ -88,6 +88,14 @@
       todo: "Good stop for tonight's van if it is on your route.",
       askWho: "our outreach team",
     },
+    shop: {
+      label: "Shop opener",
+      help: "Find a vacant storefront where your business fills what the block is missing.",
+      value: "A short list of vacant storefronts where your business would be the only one of its kind nearby, with what each block is missing.",
+      todo: "Context only: street conditions near a storefront, not a judgment of the people there.",
+      askWho: "a new small business",
+      shop: true, // questions go to /api/blockgap instead of /api/chat
+    },
   };
   const persona = () => PERSONAS[S.persona] || PERSONAS.mayor;
 
@@ -102,6 +110,7 @@
   const params = new URLSearchParams(location.search);
   if (PERSONAS[params.get("persona")]) S.persona = params.get("persona");
   const deepQ = (params.get("q") || "").trim().slice(0, 500);
+  const MOCK_SHOP = params.get("mockshop") === "1"; // force the Shop Opener sample answer (shop-mock.js)
 
   // ---------------------------------------------------------------- api
   async function getJSON(url, opts = {}, timeout = 15000) {
@@ -123,6 +132,19 @@
     pitstops: (at) => (S.mock ? M().pitstops(at) : getJSON("/api/pitstops" + (at ? `?at=${encodeURIComponent(at)}` : ""))),
     cell: (id) => (S.mock ? M().cell(id) : getJSON(`/api/cell/${encodeURIComponent(id)}`)),
     briefing: (district) => (S.mock ? M().briefing(district) : post("/api/briefing", { district }, 90000)),
+    // Shop Opener (slow: 10-40 s). Errors carry .status so the UI can say something friendly.
+    async blockgap(q) {
+      if ((S.mock || MOCK_SHOP) && window.BS_SHOP_MOCK) return { ...(await window.BS_SHOP_MOCK.blockgap(q)), _mock: true };
+      const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 120000);
+      try {
+        let r;
+        try { r = await fetch("/api/blockgap?q=" + encodeURIComponent(q), { signal: ctl.signal }); }
+        catch (e) { throw Object.assign(new Error(e.name === "AbortError" ? "timeout" : e.message), { status: e.name === "AbortError" ? 504 : 0 }); }
+        let body = null; try { body = await r.json(); } catch (e) { /* not JSON */ }
+        if (!r.ok || !body || body.error) throw Object.assign(new Error((body && body.error) || `HTTP ${r.status}`), { status: r.ok ? 500 : r.status });
+        return body;
+      } finally { clearTimeout(t); }
+    },
     async *chat(body) {
       if (S.mock) { yield* M().chat(body); return; }
       const r = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -307,6 +329,16 @@
     $$(".player").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.persona === p)));
     $("#personaHelp").textContent = persona().help;
     $("#introValue").textContent = persona().value;
+    const shop = !!persona().shop;
+    // Suggested questions: shop questions only for the shop opener; the original two otherwise.
+    $$(".quest").forEach((b) => (b.hidden = shop ? b.dataset.persona !== "shop" : b.dataset.persona === "shop"));
+    $("#briefBtn").hidden = shop;
+    const inp = $("#chatInput");
+    if (inp) {
+      if (!inp.dataset.ph0) inp.dataset.ph0 = inp.placeholder;
+      inp.placeholder = shop ? "e.g. I want to open a bike repair shop in the Sunset" : inp.dataset.ph0;
+    }
+    if (map) shopMode(shop);
     if (S.selected && !$("#inspect").hidden) openInspect(S.selected, { refetch: false, focus: false });
   }
 
@@ -600,6 +632,252 @@
     }
   }
 
+  // ---------------------------------------------------------------- shop opener (persona 3: GET /api/blockgap)
+  // Questions from the shop persona go here instead of /api/chat. Everything from the engine is rendered as text
+  // (textContent), never HTML: Mistral may answer in the user's language and the data comes from outside.
+  const ask = (text) => (persona().shop ? runShop(text) : sendChat(text));
+  const SH = { data: null, q: "", model: null, layer: null, markers: new Map(), sel: null, uid: 0 };
+
+  // Elasticsearch geo_point arrives as {lat,lon}, [lon,lat], "lat,lon", "POINT (lon lat)" or GeoJSON. -> [lat, lon] | null
+  function toLatLon(loc) {
+    if (loc == null) return null;
+    let lat, lon, m;
+    if (Array.isArray(loc)) [lon, lat] = loc;
+    else if (typeof loc === "string") {
+      const s = loc.trim();
+      if ((m = s.match(/^POINT\s*\(\s*(-?[\d.]+)\s+(-?[\d.]+)\s*\)$/i))) { lon = m[1]; lat = m[2]; }
+      else if ((m = s.match(/^(-?[\d.]+)\s*,\s*(-?[\d.]+)$/))) { lat = m[1]; lon = m[2]; }
+    } else if (typeof loc === "object") {
+      if (Array.isArray(loc.coordinates)) [lon, lat] = loc.coordinates;
+      else { lat = loc.lat ?? loc.latitude; lon = loc.lon ?? loc.lng ?? loc.longitude; }
+    }
+    if (lat == null || lon == null || lat === "" || lon === "") return null;
+    lat = Number(lat); lon = Number(lon);
+    if (!isFinite(lat) || !isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
+    return [lat, lon];
+  }
+  const normAddr = (s) => String(s || "").toLowerCase().replace(/[.,#]/g, " ").replace(/\s+/g, " ").trim();
+  function matchSpace(addr, spaces, used) {
+    const a = normAddr(addr); if (!a) return -1;
+    const ok = (i) => !used.has(i);
+    let i = spaces.findIndex((s, k) => ok(k) && normAddr(s.address) === a);
+    if (i < 0) i = spaces.findIndex((s, k) => { const b = normAddr(s.address); return ok(k) && b && (a.startsWith(b) || b.startsWith(a)); });
+    return i;
+  }
+  // Ranks: top picks are 1-3 (answer order), the other storefronts continue 4..N in engine order. One number per place.
+  function shopModel(d) {
+    const spaces = Array.isArray(d.spaces) ? d.spaces : [];
+    const top3 = (d.answer && Array.isArray(d.answer.top3) ? d.answer.top3 : []).slice(0, 3);
+    const used = new Set();
+    const picks = top3.map((t, k) => {
+      const i = matchSpace(t && t.address, spaces, used); if (i >= 0) used.add(i);
+      const s = i >= 0 ? spaces[i] : null;
+      return { rank: k + 1, top: true, t: t || {}, s, ll: s ? toLatLon(s.location) : null, address: (t && t.address) || (s && s.address) || "Storefront" };
+    });
+    let n = picks.length;
+    const rest = [];
+    spaces.forEach((s, i) => { if (!used.has(i)) rest.push({ rank: ++n, top: false, t: null, s, ll: toLatLon(s.location), address: s.address || "Storefront" }); });
+    return { picks, all: picks.concat(rest) };
+  }
+  const LANGS = { english: "en", spanish: "es", "español": "es", espanol: "es", chinese: "zh", mandarin: "zh", cantonese: "zh", vietnamese: "vi", filipino: "fil", tagalog: "tl", french: "fr", korean: "ko", japanese: "ja", russian: "ru", arabic: "ar", portuguese: "pt", hindi: "hi", tamil: "ta", german: "de", italian: "it" };
+  const langCode = (l) => { const k = String(l || "").toLowerCase().trim(); return LANGS[k] || (/^[a-z]{2,3}(-[a-z]{2,4})?$/.test(k) ? k : ""); };
+  const valText = (v) => (v == null ? "" : Array.isArray(v) ? v.map(valText).filter(Boolean).join(", ")
+    : typeof v === "object" ? Object.entries(v).map(([k, x]) => `${k}: ${valText(x)}`).join(", ") : String(v));
+  const countsText = (o) => { const e = Object.entries(o || {}); return e.length ? e.map(([k, v]) => `${k} ${fmt(v)}`).join(", ") : "None reported"; };
+  const elt = (tag, cls, text) => { const x = document.createElement(tag); if (cls) x.className = cls; if (text != null) x.textContent = text; return x; };
+
+  function shopPopupHtml(it) {
+    const s = it.s || {}, ex = (s.same_type_examples || []).filter(Boolean);
+    return `<div class="shop-pop"><p class="sp-k">${it.top ? `Top pick ${it.rank}` : `Storefront ${it.rank}`} · vacant</p>
+      <h3>${esc(it.address)}</h3>
+      <dl>
+        <dt>Businesses within 300 m</dt><dd>${fmt(s.businesses_within_300m)}</dd>
+        <dt>Same-type competitors within 300 m</dt><dd>${fmt(s.same_type_within_300m)}${ex.length ? `<span class="sp-ex">${esc(ex.join(", "))}</span>` : ""}</dd>
+        <dt>Corridor</dt><dd>${esc(s.corridor || "Not on a named corridor")}</dd>
+      </dl></div>`;
+  }
+  function drawShop() {
+    if (!SH.layer) SH.layer = L.layerGroup();
+    SH.layer.clearLayers(); SH.markers.clear();
+    if (!SH.model) return;
+    // draw the rest first so top picks sit on top
+    [...SH.model.all].reverse().forEach((it) => {
+      if (!it.ll) return;
+      const big = it.top, sz = big ? 32 : 22;
+      const label = `${big ? "Top pick" : "Storefront"} ${it.rank}: ${it.address}`;
+      const icon = L.divIcon({ className: "shop-pin" + (big ? " shop-top" : ""), html: `<span aria-hidden="true">${it.rank}</span>`, iconSize: [sz, sz], iconAnchor: [sz / 2, sz / 2] });
+      const mk = L.marker(it.ll, { icon, keyboard: true, title: label, zIndexOffset: big ? 3000 - it.rank : 1200 });
+      mk.on("add", () => { const el = mk.getElement(); if (el) el.setAttribute("aria-label", label); });
+      mk.bindPopup(shopPopupHtml(it), { className: "shop-popup", maxWidth: 280, autoPanPadding: [24, 24] });
+      mk.on("click", () => selectShop(it.rank, { fly: false }));
+      mk.addTo(SH.layer); SH.markers.set(it.rank, mk);
+    });
+  }
+  function fitShop() {
+    if (!SH.model) return;
+    let pts = SH.model.picks.filter((i) => i.ll).map((i) => i.ll);
+    if (!pts.length) pts = SH.model.all.filter((i) => i.ll).map((i) => i.ll);
+    if (!pts.length) return;
+    const anim = !reduceMotion();
+    if (pts.length === 1) map.setView(pts[0], 17, { animate: anim });
+    else map.fitBounds(L.latLngBounds(pts).pad(0.5), { maxZoom: 17, animate: anim, duration: 0.9 });
+  }
+  function selectShop(rank, { fly = true } = {}) {
+    SH.sel = rank;
+    $$(".shop-card[data-shop-rank]").forEach((el) => el.classList.toggle("on", Number(el.dataset.shopRank) === rank));
+    $$("button[data-shop-go]").forEach((b) => b.setAttribute("aria-pressed", String(Number(b.dataset.shopGo) === rank)));
+    const mk = SH.markers.get(rank);
+    if (!mk || !fly) return;
+    map.setView(mk.getLatLng(), Math.max(map.getZoom(), 17), { animate: !reduceMotion() });
+    mk.openPopup();
+  }
+  function renderShopBoard() {
+    const has = !!SH.model && !!persona().shop;
+    $("#shopBoard").hidden = !has;
+    $("#gapBoard").hidden = has;
+    if (!has) return;
+    $("#shopCap").textContent = `Vacant storefronts for “${SH.q}”. 1–3 are the top picks. Click one to see it on the map.`;
+    $("#shopList").innerHTML = SH.model.all.map((it) => {
+      const s = it.s || {};
+      const sub = it.s ? `${fmt(s.same_type_within_300m)} same type · ${fmt(s.businesses_within_300m)} businesses within 300 m` : "No Elastic numbers for this address";
+      return `<li><button type="button" class="shop-row" data-shop-go="${it.rank}" aria-pressed="${SH.sel === it.rank}">
+        <span class="shop-rk${it.top ? " top" : ""}" aria-hidden="true">${it.rank}</span>
+        <span class="shop-nm"><span class="sr-only">${it.top ? "Top pick" : "Storefront"} ${it.rank}: </span>${esc(it.address)}<span class="shop-sub">${esc(sub)}${it.ll ? "" : " · no map pin"}</span></span>
+      </button></li>`;
+    }).join("");
+  }
+  // Called on persona change (and once at boot). Restores the gap view completely when leaving the shop persona.
+  function shopMode(on) {
+    document.body.classList.toggle("shop-mode", on);
+    if (!SH.layer) SH.layer = L.layerGroup();
+    if (on) { if (!map.hasLayer(SH.layer)) SH.layer.addTo(map); }
+    else { map.closePopup(); if (map.hasLayer(SH.layer)) map.removeLayer(SH.layer); }
+    renderShopBoard();
+  }
+
+  function renderShopAnswer(d) {
+    const a = d.answer || {}, lang = langCode(d.parsed && d.parsed.language), uid = ++SH.uid;
+    const wrap = elt("div", "ans shop-ans");
+    if (d._mock) wrap.append(elt("p", "shop-mock", "Sample answer from demo data (not live)."));
+    if (a.summary) { const p = elt("p", "shop-sum", valText(a.summary)); if (lang) p.lang = lang; wrap.append(p); }
+    const ol = elt("ol", "shop-cards"); ol.setAttribute("aria-label", "Top 3 storefronts");
+    SH.model.picks.forEach((it) => {
+      const li = elt("li", "shop-card"); li.dataset.shopRank = it.rank;
+      const h = elt("h4", "shop-ch");
+      h.append(elt("span", "shop-badge", String(it.rank)));
+      h.firstChild.setAttribute("aria-hidden", "true");
+      if (it.ll) {
+        const b = elt("button", "shop-go"); b.type = "button"; b.dataset.shopGo = it.rank; b.setAttribute("aria-pressed", "false");
+        b.append(elt("span", "sr-only", `Top pick ${it.rank}: `), document.createTextNode(it.address), elt("span", "sr-only", ". Show on map"));
+        h.append(b);
+      } else {
+        h.append(elt("span", "shop-addr", it.address), elt("span", "shop-nopin", " (not on the map)"));
+      }
+      li.append(h);
+      const dl = elt("dl", "shop-dl");
+      [["Why here", it.t.why], ["Competitors nearby", it.t.competitors_nearby], ["What the block is missing", it.t.what_the_block_is_missing], ["Street conditions", it.t.street_conditions]].forEach(([k, v]) => {
+        const txt = valText(v); if (!txt) return;
+        const dd = elt("dd", null, txt); if (lang) dd.lang = lang;
+        dl.append(elt("dt", null, k), dd);
+      });
+      li.append(dl);
+      li.addEventListener("click", () => selectShop(it.rank));
+      ol.append(li);
+    });
+    if (!SH.model.picks.length) ol.append(elt("li", "shop-card", "No top picks came back. Try naming a neighborhood."));
+    wrap.append(ol);
+    wrap.append(elt("p", "shop-note", "Vacancy data comes from the latest SF Commercial Vacancy Tax filing, not live listings. Street conditions are 311 counts within 300 m, shown for context, not as a judgment of the people there."));
+
+    // Under the hood: what Mistral parsed + the raw Elastic numbers for the best storefront.
+    const hb = elt("button", "btn btn-quiet btn-sm hood-btn", "Under the hood");
+    hb.type = "button"; hb.setAttribute("aria-expanded", "false"); hb.setAttribute("aria-controls", `hood${uid}`);
+    const hood = elt("div", "hood"); hood.id = `hood${uid}`; hood.hidden = true;
+    hood.append(elt("h4", null, "Mistral parsed your request (structured JSON)"), elt("pre", null, JSON.stringify(d.parsed || {}, null, 2)));
+    const s0 = (d.spaces || [])[0];
+    hood.append(elt("h4", null, "Elastic numbers for the top storefront"));
+    if (s0) {
+      const tb = elt("table"); tb.append(elt("caption", null, s0.address || "Storefront"));
+      const tbody = elt("tbody");
+      [["Businesses within 300 m", fmt(s0.businesses_within_300m)],
+        ["Same type within 300 m", fmt(s0.same_type_within_300m) + ((s0.same_type_examples || []).length ? ` (${valText(s0.same_type_examples)})` : "")],
+        ["Nearby business mix", countsText(s0.nearby_mix)],
+        ["Corridor", s0.corridor || "Not on a named corridor"],
+        ["Street conditions within 300 m", countsText(s0.street_conditions_300m)]].forEach(([k, v]) => {
+        const tr = elt("tr"); const th = elt("th", null, k); th.scope = "row"; tr.append(th, elt("td", null, v)); tbody.append(tr);
+      });
+      tb.append(tbody); hood.append(tb);
+    } else hood.append(elt("p", null, "No storefronts came back from Elastic."));
+    hb.addEventListener("click", () => { const open = hood.hidden; hood.hidden = !open; hb.setAttribute("aria-expanded", String(open)); });
+    wrap.append(hb, hood);
+    log.appendChild(wrap);
+    log.scrollTop += wrap.getBoundingClientRect().top - log.getBoundingClientRect().top - 8;
+  }
+
+  function renderShopError(e, text) {
+    const card = elt("div", "shop-errcard");
+    const msg = e.status === 503 ? "Shop Opener isn't switched on for this server yet. The map and the other personas still work."
+      : (e.status === 504 || /timeout|timed out|ETIMEDOUT|SIGTERM/i.test(e.message || "")) ? "Shop Opener took too long to answer. Checking storefronts can take up to a minute. Please try again."
+      : "Shop Opener couldn't finish this search. Please try again in a moment.";
+    card.append(elt("p", "shop-errmsg", msg));
+    if (e.message && e.message !== "timeout") card.append(elt("p", "shop-errdetail", "Details: " + e.message));
+    const b = elt("button", "btn btn-sm", "Try again"); b.type = "button";
+    b.addEventListener("click", () => { if (!S.busy) { b.disabled = true; runShop(text); } });
+    card.append(b);
+    log.appendChild(card); log.scrollTop = log.scrollHeight;
+  }
+
+  async function runShop(text) {
+    text = (text || "").trim();
+    if (!text || S.busy) return;
+    S.busy = true; $("#sendBtn").disabled = true; $$(".quest").forEach((b) => (b.disabled = true));
+    clearFx();
+    logLine("you", `<span class="who">You, as ${esc(persona().label)}</span>${esc(text)}`);
+    const box = elt("div", "shop-run");
+    box.innerHTML = `<div class="shop-chips"><span class="chip shop-chip" data-k="mistral">Mistral</span><span class="chip shop-chip" data-k="elastic">Elastic</span></div><ol class="shop-steps"></ol>`;
+    log.appendChild(box);
+    const STEPS = [
+      ["mistral", "Mistral: reading your request…"],
+      ["elastic", "Elastic: checking vacant storefronts, nearby businesses and 311 reports within 300 m…"],
+      ["mistral", "Mistral: picking the top 3 and explaining why…"],
+    ];
+    const chip = (k, state) => {
+      const c = box.querySelector(`[data-k="${k}"]`); c.dataset.state = state;
+      c.textContent = (k === "mistral" ? "Mistral" : "Elastic") + (state === "done" ? " ✓" : state === "on" ? " …" : "");
+    };
+    let step = -1;
+    const advance = () => {
+      if (step >= STEPS.length - 1) return;
+      step++;
+      $$(".shop-steps li", box).forEach((li) => li.classList.add("done"));
+      box.querySelector(".shop-steps").append(elt("li", null, STEPS[step][1]));
+      if (step === 1) chip("mistral", "done");
+      chip(STEPS[step][0], "on");
+      log.scrollTop = log.scrollHeight;
+    };
+    advance();
+    const timers = (S.mock || MOCK_SHOP ? [1800, 4200] : [4000, 14000]).map((ms) => setTimeout(advance, ms));
+    try {
+      const d = await api.blockgap(text);
+      timers.forEach(clearTimeout);
+      while (step < STEPS.length - 1) advance();
+      $$(".shop-steps li", box).forEach((li) => li.classList.add("done"));
+      chip("mistral", "done"); chip("elastic", "done");
+      SH.data = d; SH.q = text; SH.model = shopModel(d); SH.sel = null;
+      drawShop();
+      renderShopBoard();
+      if (persona().shop) fitShop();
+      renderShopAnswer(d);
+    } catch (e) {
+      console.warn("[BlockSignal] /api/blockgap failed:", e);
+      timers.forEach(clearTimeout);
+      $$(".shop-chip", box).forEach((c) => { if (c.dataset.state === "on") { c.dataset.state = "stopped"; c.textContent = c.textContent.replace(" …", " stopped"); } });
+      renderShopError(e, text);
+    } finally {
+      timers.forEach(clearTimeout);
+      S.busy = false; $("#sendBtn").disabled = false; $$(".quest").forEach((b) => (b.disabled = false));
+    }
+  }
+
   // ---------------------------------------------------------------- briefing memo
   let modalOpener = null, memoDistrict = null;
   function closeModal() {
@@ -674,8 +952,8 @@
         if (S.cells.length) map.fitBounds(L.latLngBounds(S.cells.map((c) => [c.lat, c.lon])).pad(0.1), { animate: !reduceMotion(), duration: 0.8 });
       } catch (e) { console.error(e); }
     });
-    $$(".quest").forEach((b) => b.addEventListener("click", () => { setPersona(b.dataset.persona); sendChat(b.dataset.q); }));
-    $("#chatForm").addEventListener("submit", (e) => { e.preventDefault(); const i = $("#chatInput"); const v = i.value; i.value = ""; sendChat(v); });
+    $$(".quest").forEach((b) => b.addEventListener("click", () => { setPersona(b.dataset.persona); ask(b.dataset.q); }));
+    $("#chatForm").addEventListener("submit", (e) => { e.preventDefault(); const i = $("#chatInput"); const v = i.value; i.value = ""; ask(v); });    $("#shopList").addEventListener("click", (e) => { const b = e.target.closest("button[data-shop-go]"); if (b) selectShop(Number(b.dataset.shopGo)); });
     $("#briefBtn").addEventListener("click", openBriefing);
     $("#modalClose").addEventListener("click", closeModal);
     $("#printBtn").addEventListener("click", () => window.print());
@@ -709,6 +987,7 @@
     setPersona(S.persona);
     setIntro(store.get("bs.introHidden") !== "1");
     initMap(); wire();
+    shopMode(!!persona().shop);
     const statusEl = $("#mapStatus");
     const step = (txt) => { statusEl.textContent = txt; };
 

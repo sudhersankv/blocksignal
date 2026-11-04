@@ -50,7 +50,7 @@ First mention on a page: "District 6 (SoMa & Mission Bay)". After that: "D6 · S
 - **Mayor's Office / HSOC:** Know which blocks to prioritize this week, and where a mobile Pit Stop would reach the most people. *Gain: the same budget closes more gaps.*
 - **Outreach charities:** Plan tonight's van route in seconds, knowing which Pit Stops are closed. *Gain: reach more people per shift.*
 - **Residents and advocates:** See service gaps with evidence, not anecdotes.
-- *Coming next:* **Shop Opener** finds what a block is missing for small businesses.
+- **Shop openers:** Find a vacant storefront where your business fills what the block is missing. *Gain: open where you're needed, not next to five competitors.*
 
 ## Built with (plain words → tech)
 - **Mistral** reads messy Pit Stop hours and crew notes into clean data *(structured outputs)*, runs the Outreach Compass analyst *(function calling)*, and searches notes by meaning *(mistral-embed)*.
