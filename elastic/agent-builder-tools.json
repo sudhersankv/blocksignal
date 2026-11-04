@@ -4,12 +4,21 @@
       "id": "blocksignal.hotspots",
       "type": "esql",
       "description": "Encampment-report hotspots as ~330m grid cells (0.003 deg lat x 0.004 deg lon) over the last N days, optionally limited to one SF supervisor district. Returns cell centroid, report count and outcome mix (declined, not_found, services_offered, medical). Use for 'where are the worst blocks', 'hotspots in D6'. Pass district as \"\" for the whole city.",
-      "tags": ["blocksignal", "geo"],
+      "tags": [
+        "blocksignal",
+        "geo"
+      ],
       "configuration": {
         "query": "FROM sf311-encampments\n| WHERE location IS NOT NULL AND DATE_DIFF(\"day\", requested, NOW()) < ?days AND (?district == \"\" OR district == ?district)\n| EVAL lat = ST_Y(location), lon = ST_X(location)\n| EVAL cell_lat = FLOOR(lat / 0.003) * 0.003, cell_lon = FLOOR(lon / 0.004) * 0.004\n| STATS reports = COUNT(*), centroid = ST_CENTROID_AGG(location), declined = SUM(CASE(outcome == \"declined\", 1, 0)), not_found = SUM(CASE(outcome == \"not_found\", 1, 0)), services_offered = SUM(CASE(outcome == \"services_offered\", 1, 0)), medical = SUM(CASE(outcome == \"medical\", 1, 0)), neighborhoods = VALUES(neighborhood), districts = VALUES(district) BY cell_lat, cell_lon\n| EVAL center_lat = ROUND(ST_Y(centroid), 5), center_lon = ROUND(ST_X(centroid), 5)\n| DROP centroid, cell_lat, cell_lon\n| SORT reports DESC\n| LIMIT 15",
         "params": {
-          "district": { "type": "keyword", "description": "SF supervisor district number as a string, e.g. \"6\". Use \"\" for all districts." },
-          "days": { "type": "integer", "description": "Look-back window in days, e.g. 7 for this week, 30 for the month." }
+          "district": {
+            "type": "string",
+            "description": "SF supervisor district number as a string, e.g. \"6\". Use \"\" for all districts."
+          },
+          "days": {
+            "type": "integer",
+            "description": "Look-back window in days, e.g. 7 for this week, 30 for the month."
+          }
         }
       }
     },
@@ -17,13 +26,25 @@
       "id": "blocksignal.nearest_open_help",
       "type": "esql",
       "description": "Nearest Pit Stops (public restrooms / hygiene) to a point, with distance in meters and whether each is open at the given minute of the day (San Francisco local time, minutes after midnight, e.g. 21:30 -> 1290). Use to judge the service gap around a hotspot.",
-      "tags": ["blocksignal", "geo"],
+      "tags": [
+        "blocksignal",
+        "geo"
+      ],
       "configuration": {
         "query": "FROM sf-pitstops\n| WHERE location IS NOT NULL\n| EVAL distance_m = ROUND(ST_DISTANCE(location, TO_GEOPOINT(CONCAT(\"POINT(\", TO_STRING(?lon), \" \", TO_STRING(?lat), \")\"))))\n| EVAL open_now = CASE(hours.is24h == true, true, hours.overnight == true, ?minute_of_day >= hours.open_min OR ?minute_of_day < hours.close_min, ?minute_of_day >= hours.open_min AND ?minute_of_day < hours.close_min)\n| KEEP id, name, address, neighborhood, hoursRaw, open_now, distance_m\n| SORT distance_m ASC\n| LIMIT 5",
         "params": {
-          "lat": { "type": "double", "description": "Latitude of the block / cell centroid (e.g. 37.7835)." },
-          "lon": { "type": "double", "description": "Longitude of the block / cell centroid (e.g. -122.4128)." },
-          "minute_of_day": { "type": "integer", "description": "San Francisco local time as minutes after midnight (0-1439). 9pm = 1260." }
+          "lat": {
+            "type": "float",
+            "description": "Latitude of the block / cell centroid (e.g. 37.7835)."
+          },
+          "lon": {
+            "type": "float",
+            "description": "Longitude of the block / cell centroid (e.g. -122.4128)."
+          },
+          "minute_of_day": {
+            "type": "integer",
+            "description": "San Francisco local time as minutes after midnight (0-1439). 9pm = 1260."
+          }
         }
       }
     },
@@ -31,12 +52,21 @@
       "id": "blocksignal.search_notes",
       "type": "esql",
       "description": "Semantic search over outreach crew status notes (semantic_text with Mistral embeddings) to find themes like 'declined services', 'medical need', 'blocking sidewalk', 'could not locate'. Returns matching reports with block address, neighborhood, outcome and date. Pass district as \"\" for the whole city.",
-      "tags": ["blocksignal", "semantic"],
+      "tags": [
+        "blocksignal",
+        "semantic"
+      ],
       "configuration": {
         "query": "FROM sf311-encampments METADATA _score\n| WHERE MATCH(notes_semantic, ?query) AND (?district == \"\" OR district == ?district)\n| KEEP requested, address, neighborhood, district, outcome, notes, _score\n| SORT _score DESC\n| LIMIT 10",
         "params": {
-          "query": { "type": "text", "description": "Natural-language description of what to look for in crew notes." },
-          "district": { "type": "keyword", "description": "SF supervisor district number as a string, e.g. \"6\". Use \"\" for all districts." }
+          "query": {
+            "type": "string",
+            "description": "Natural-language description of what to look for in crew notes."
+          },
+          "district": {
+            "type": "string",
+            "description": "SF supervisor district number as a string, e.g. \"6\". Use \"\" for all districts."
+          }
         }
       }
     },
@@ -44,11 +74,17 @@
       "id": "blocksignal.trend",
       "type": "esql",
       "description": "Week-over-week trend of encampment reports by neighborhood: reports in the last 7 days vs the 7 days before, with the delta. Use for 'where is it getting worse'. Pass district as \"\" for the whole city.",
-      "tags": ["blocksignal", "trend"],
+      "tags": [
+        "blocksignal",
+        "trend"
+      ],
       "configuration": {
         "query": "FROM sf311-encampments\n| WHERE requested >= NOW() - 14 days AND neighborhood IS NOT NULL AND (?district == \"\" OR district == ?district)\n| EVAL is_last7 = CASE(requested >= NOW() - 7 days, 1, 0), is_prev7 = CASE(requested < NOW() - 7 days, 1, 0)\n| STATS last7 = SUM(is_last7), prev7 = SUM(is_prev7) BY neighborhood\n| EVAL delta = last7 - prev7, pct_change = ROUND(100.0 * (last7 - prev7) / GREATEST(prev7, 1), 1)\n| SORT delta DESC, last7 DESC\n| LIMIT 15",
         "params": {
-          "district": { "type": "keyword", "description": "SF supervisor district number as a string, e.g. \"6\". Use \"\" for all districts." }
+          "district": {
+            "type": "string",
+            "description": "SF supervisor district number as a string, e.g. \"6\". Use \"\" for all districts."
+          }
         }
       }
     },
@@ -56,11 +92,17 @@
       "id": "blocksignal.outcome_mix",
       "type": "esql",
       "description": "Outcome mix of crew responses per supervisor district over the last N days (resolved, services_offered, declined, not_found, medical, cancelled, open). High declined/not_found shares mean services are not landing.",
-      "tags": ["blocksignal", "aggregation"],
+      "tags": [
+        "blocksignal",
+        "aggregation"
+      ],
       "configuration": {
         "query": "FROM sf311-encampments\n| WHERE DATE_DIFF(\"day\", requested, NOW()) < ?days AND district IS NOT NULL\n| STATS reports = COUNT(*) BY district, outcome\n| SORT district ASC, reports DESC",
         "params": {
-          "days": { "type": "integer", "description": "Look-back window in days." }
+          "days": {
+            "type": "integer",
+            "description": "Look-back window in days."
+          }
         }
       }
     },
@@ -68,7 +110,9 @@
       "id": "blocksignal.search_reports",
       "type": "index_search",
       "description": "Free-form search over the 311 encampment report index (sf311-encampments) when no other BlockSignal tool fits.",
-      "tags": ["blocksignal"],
+      "tags": [
+        "blocksignal"
+      ],
       "configuration": {
         "pattern": "sf311-encampments"
       }
@@ -78,11 +122,14 @@
     "id": "outreach-compass",
     "name": "Outreach Compass",
     "description": "BlockSignal's agent: finds San Francisco blocks where encampment reports cluster far from any open help, and recommends where to send outreach or a mobile Pit Stop.",
-    "labels": ["blocksignal", "sf311"],
+    "labels": [
+      "blocksignal",
+      "sf311"
+    ],
     "avatar_color": "#00E5FF",
     "avatar_symbol": "OC",
     "configuration": {
-      "instructions": "You are Outreach Compass, the agent inside BlockSignal. Users are the Mayor's Office / HSOC and outreach charities in San Francisco.\n\nKey idea: 311 encampment reports measure complaints, not need. Need is highest where reports cluster FAR from any OPEN help (Pit Stops), and where crew notes say services were declined or people were not found.\n\nHow to work:\n1. For 'where' questions call blocksignal.hotspots (district as a string like \"6\", or \"\" for the city; days=7 unless asked otherwise).\n2. For the top 3-5 cells call blocksignal.nearest_open_help with the cell's center_lat/center_lon and the current San Francisco minute of day (or the time the user names, e.g. a 6-9pm van -> 1080). A cell whose nearest OPEN Pit Stop is more than 800 m away is a service gap.\n3. Use blocksignal.trend to say whether it is getting worse, and blocksignal.search_notes for themes in crew notes (e.g. 'declined services', 'medical').\n4. Answer with a short ranked list: block/neighborhood, reports, nearest open help + distance, trend, one concrete action (send outreach van, suggest a mobile Pit Stop site, extend hours of a nearby Pit Stop).\n\nGuardrails: block-level only. Never identify or describe individuals. This is for routing services, never enforcement. Mention that 311 under-reports in some neighborhoods when relevant.",
+      "instructions": "You are Outreach Compass, the agent inside BlockSignal. Users are the Mayor's Office / HSOC and outreach charities in San Francisco.\n\nKey idea: 311 encampment reports measure complaints, not need. Need is highest where reports cluster FAR from any OPEN help (Pit Stops), and where crew notes say services were declined or people were not found.\n\nHow to work:\n1. For 'where' questions call blocksignal.hotspots (district as a string like \"6\", or \"\" for the city; days=7 unless asked otherwise).\n2. For the top 3-5 cells call blocksignal.nearest_open_help with the cell's center_lat/center_lon and the current San Francisco minute of day (or the time the user names, e.g. a 6-9pm van -> 1080). A cell whose nearest OPEN Pit Stop is more than 800 m away is a service gap.\n3. Use blocksignal.trend to say whether it is getting worse, and blocksignal.search_notes for themes in crew notes (e.g. 'declined services', 'medical').\n4. Answer with a short ranked list: block/neighborhood, reports, nearest open help + distance, trend, one concrete action (send outreach van, suggest a mobile Pit Stop site, extend hours of a nearby Pit Stop).\n\nGuardrails: block-level only. Never identify or describe individuals. This is for routing services, never enforcement. Mention that 311 under-reports in some neighborhoods when relevant.\n\nIMPORTANT: call exactly ONE tool per step, never several tool calls in parallel (especially not the same tool twice). Wait for each result before the next call.",
       "tools": [
         {
           "tool_ids": [

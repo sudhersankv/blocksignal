@@ -122,12 +122,11 @@
   const cellPaths = new Map(), psMarkers = new Map();
   function initMap() {
     map = L.map("map", { zoomControl: true, attributionControl: true, preferCanvas: false, zoomSnap: 0.5 }).setView([37.773, -122.43], 13);
-    L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png", {
-      subdomains: "abcd", maxZoom: 19, className: "base-tiles",
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+    // CARTO raster basemaps now need an API key, so use OSM tiles and push them to night-teal with a CSS filter.
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19, className: "base-tiles",
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
     }).addTo(map);
-    map.createPane("labels"); map.getPane("labels").style.zIndex = 420; map.getPane("labels").style.pointerEvents = "none";
-    L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png", { subdomains: "abcd", maxZoom: 19, pane: "labels", className: "label-tiles" }).addTo(map);
     cellLayer = L.layerGroup().addTo(map);
     psLayer = L.layerGroup().addTo(map);
     fxLayer = L.layerGroup().addTo(map);

@@ -2,3 +2,7 @@
 .git
 data/*.json
 node_modules
+.claude
+.agents
+data/skills
+skills-lock.json

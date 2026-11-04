@@ -36,7 +36,7 @@ async function upsert(kind, obj) {
   // kind: 'tools' | 'agents'
   const created = await kbn('POST', `/api/agent_builder/${kind}`, obj);
   if (created.ok) return 'created';
-  if (created.status === 409 || /exist/i.test(JSON.stringify(created.json))) {
+  if (created.status === 409 || /already exists/i.test(JSON.stringify(created.json))) {
     const { id, type, ...rest } = obj; // id and type are immutable on update
     const updated = await kbn('PUT', `/api/agent_builder/${kind}/${encodeURIComponent(id)}`, rest);
     if (updated.ok) return 'updated';
